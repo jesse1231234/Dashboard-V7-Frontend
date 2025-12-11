@@ -35,8 +35,7 @@ const API_BASE_URL =
 export default function HomePage() {
   const [step, setStep] = useState(1);
 
-  const [canvasBaseUrl, setCanvasBaseUrl] = useState("");
-  const [canvasToken, setCanvasToken] = useState("");
+  // ✅ Only course ID now
   const [courseId, setCourseId] = useState("");
 
   const [canvasFile, setCanvasFile] = useState<File | null>(null);
@@ -50,7 +49,7 @@ export default function HomePage() {
   const [echoSummary, setEchoSummary] = useState<any[]>([]);
   const [gradeSummary, setGradeSummary] = useState<any[]>([]);
 
-  const canContinueStep1 = canvasBaseUrl && canvasToken && courseId;
+  const canContinueStep1 = !!courseId;
   const canContinueStep2 = !!canvasFile && !!echoFile;
 
   function normalizeKpis(raw: Record<string, any> | null | undefined): Kpi[] {
@@ -80,7 +79,7 @@ export default function HomePage() {
   }
 
   async function handleRunAnalysis() {
-    if (!canvasFile || !echoFile) return;
+    if (!canvasFile || !echoFile || !courseId) return;
 
     setLoading(true);
     setAnalysis("");
@@ -91,8 +90,7 @@ export default function HomePage() {
 
     try {
       const formData = new FormData();
-      formData.append("canvas_base_url", canvasBaseUrl);
-      formData.append("canvas_token", canvasToken);
+      // ✅ only send course_id + files now
       formData.append("course_id", courseId);
       formData.append("canvas_gradebook_csv", canvasFile);
       formData.append("echo_analytics_csv", echoFile);
@@ -148,7 +146,7 @@ export default function HomePage() {
       <div className="mx-auto mt-8 mb-16 max-w-6xl px-6 space-y-6">
         {/* Step indicator */}
         <ol className="flex items-center justify-between gap-4 text-sm">
-          {["Canvas connection", "Upload data", "Review insights"].map(
+          {["Course selection", "Upload data", "Review insights"].map(
             (label, idx) => {
               const index = idx + 1;
               const active = step === index;
@@ -180,42 +178,19 @@ export default function HomePage() {
           )}
         </ol>
 
-        {/* Step 1: Canvas connection */}
+        {/* Step 1: Course ID only */}
         {step === 1 && (
           <section className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6 space-y-4">
             <h2 className="text-base font-semibold text-slate-900">
-              Connect to Canvas
+              Select course
             </h2>
             <p className="text-sm text-slate-500">
-              Enter your Canvas base URL, API token, and course ID. These are
-              used by the backend to fetch module order and student count.
+              Enter the Canvas course ID. The backend will use a pre-configured
+              Canvas base URL and API token from its environment.
             </p>
 
             <div className="grid gap-4 md:grid-cols-3">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-slate-700">
-                  Canvas base URL
-                </label>
-                <input
-                  type="text"
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-csuGreen"
-                  placeholder="https://canvas.colostate.edu"
-                  value={canvasBaseUrl}
-                  onChange={(e) => setCanvasBaseUrl(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-slate-700">
-                  API token
-                </label>
-                <input
-                  type="password"
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-csuGreen"
-                  value={canvasToken}
-                  onChange={(e) => setCanvasToken(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 md:col-span-1">
                 <label className="text-xs font-medium text-slate-700">
                   Course ID
                 </label>
@@ -224,6 +199,7 @@ export default function HomePage() {
                   className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-csuGreen"
                   value={courseId}
                   onChange={(e) => setCourseId(e.target.value)}
+                  placeholder="e.g. 12345"
                 />
               </div>
             </div>
