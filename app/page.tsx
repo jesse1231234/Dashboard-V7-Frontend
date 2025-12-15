@@ -24,6 +24,42 @@ type AnalyzeResponse = {
   };
 };
 
+// ---- Column sets to match Streamlit v6 ----
+// From Dashboard-V6-main/ui/helptext.py defaults
+const ECHO_SUMMARY_COLS = [
+  "Media Title",
+  "Video Duration",
+  "# of Unique Viewers",
+  "Average View %",
+  "% of Students Viewing",
+  "% of Video Viewed Overall",
+];
+
+const ECHO_MODULE_COLS = [
+  "Module",
+  "Average View %",
+  "# of Students Viewing",
+  "Overall View %",
+  "# of Students",
+];
+
+const GRADEBOOK_MODULE_COLS = [
+  "Module",
+  "Avg % Turned In",
+  "Avg Average Excluding Zeros",
+  "n_assignments",
+];
+
+// Percent columns Streamlit scales *100 for display
+const ECHO_SUMMARY_PERCENT_COLS = [
+  "Average View %",
+  "% of Students Viewing",
+  "% of Video Viewed Overall",
+];
+const ECHO_MODULE_PERCENT_COLS = ["Average View %", "Overall View %"];
+const GRADEBOOK_MODULE_PERCENT_COLS = ["Avg % Turned In", "Avg Average Excluding Zeros"];
+
+// ---------- Formatting helpers ----------
 function toNumber(v: any): number | null {
   if (v === null || v === undefined || v === "") return null;
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -34,39 +70,58 @@ function toNumber(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function isPercentKey(key: string) {
-  const k = key.toLowerCase();
-  return (
-    k.includes("percent") ||
-    k.includes("%") ||
-    k.includes("pct") ||
-    k.includes("rate") ||
-    k.includes("average view") ||
-    k.includes("overall view") ||
-    k.includes("avg %")
-  );
-}
-
-function formatPercent(v: any) {
+function formatPercentCell(v: any) {
   const n = toNumber(v);
   if (n === null) return "";
-  // If already 0..100 keep, else assume 0..1
-  const pct = n > 1 ? n : n * 100;
+  // If backend sends 0..1 -> 0..100, else assume already percent-like
+  const pct = n <= 1 ? n * 100 : n;
   return `${pct.toFixed(1)}%`;
 }
 
-function formatCell(key: string, value: any) {
+function formatNumberCell(v: any) {
+  const n = toNumber(v);
+  if (n === null) return "";
+  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+function formatCell(key: string, value: any, percentCols?: string[]) {
   if (value === null || value === undefined) return "";
-  if (isPercentKey(key)) return formatPercent(value);
-  if (typeof value === "number") return value.toLocaleString();
+  if (percentCols?.includes(key)) return formatPercentCell(value);
+  if (typeof value === "number") return formatNumberCell(value);
+
+  // If a numeric-looking string, format it nicely (but keep plain text for other strings)
+  const n = toNumber(value);
+  if (n !== null && String(value).match(/^[\d,\.\-]+%?$/)) return formatNumberCell(n);
+
   return String(value);
 }
 
-function Table({ title, rows, maxRows = 50 }: { title: string; rows: AnyRow[]; maxRows?: number }) {
+// ---------- Table component with explicit column order ----------
+function Table({
+  title,
+  rows,
+  columns, // if provided, display these columns in this order
+  percentCols,
+  maxRows = 50,
+}: {
+  title: string;
+  rows: AnyRow[];
+  columns?: string[];
+  percentCols?: string[];
+  maxRows?: number;
+}) {
   const cols = useMemo(() => {
     if (!rows || rows.length === 0) return [];
+
+    if (columns && columns.length > 0) {
+      // Only show columns that actually exist in the data
+      const available = new Set(Object.keys(rows[0]));
+      return columns.filter((c) => available.has(c));
+    }
+
+    // Fallback: show whatever exists
     return Object.keys(rows[0]);
-  }, [rows]);
+  }, [rows, columns]);
 
   const slice = rows?.slice(0, maxRows) ?? [];
 
@@ -88,7 +143,10 @@ function Table({ title, rows, maxRows = 50 }: { title: string; rows: AnyRow[]; m
             <thead className="bg-slate-50">
               <tr>
                 {cols.map((c) => (
-                  <th key={c} className="text-left px-3 py-2 font-semibold text-slate-700 whitespace-nowrap">
+                  <th
+                    key={c}
+                    className="text-left px-3 py-2 font-semibold text-slate-700 whitespace-nowrap"
+                  >
                     {c}
                   </th>
                 ))}
@@ -99,7 +157,7 @@ function Table({ title, rows, maxRows = 50 }: { title: string; rows: AnyRow[]; m
                 <tr key={idx} className="border-t border-slate-100">
                   {cols.map((c) => (
                     <td key={c} className="px-3 py-2 text-slate-800 whitespace-nowrap">
-                      {formatCell(c, r[c])}
+                      {formatCell(c, r[c], percentCols)}
                     </td>
                   ))}
                 </tr>
@@ -127,29 +185,27 @@ export default function Page() {
 
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
-  const echoModules = result?.echo?.modules ?? [];
   const echoSummary = result?.echo?.summary ?? [];
+  const echoModules = result?.echo?.modules ?? [];
   const echoStudents = result?.echo?.students ?? [];
 
-  const gradebook = result?.grades?.gradebook ?? [];
   const gradeSummary = result?.grades?.summary ?? [];
   const gradeModuleMetrics = result?.grades?.module_metrics ?? [];
+  const gradebook = result?.grades?.gradebook ?? [];
 
-  // Best-effort studentsTotal (you can tighten this once you confirm your summary schema)
   const studentsTotal = useMemo(() => {
-    // Prefer an explicit field if present in echo summary
-    if (echoSummary && echoSummary.length > 0) {
+    // Prefer explicit total if present in echo summary
+    if (echoSummary?.[0]) {
       const row = echoSummary[0];
-      const candidates = ["Students Total", "Students", "# of Students", "Total Students", "students_total"];
-      for (const k of candidates) {
+      for (const k of ["# Students", "# of Students", "Students Total", "Total Students", "students_total"]) {
         if (row[k] !== undefined) {
           const n = toNumber(row[k]);
           if (n !== null && n > 0) return Math.round(n);
         }
       }
     }
-    // fallback: infer from echoStudents length (if one row per student)
-    if (echoStudents && echoStudents.length > 0) return echoStudents.length;
+    // fallback: one row per student
+    if (echoStudents.length > 0) return echoStudents.length;
     return null;
   }, [echoSummary, echoStudents]);
 
@@ -172,6 +228,7 @@ export default function Page() {
     setLoading(true);
     try {
       const form = new FormData();
+      // IMPORTANT: match your backend’s required field names (per your 422)
       form.append("course_id", courseCode.trim());
       form.append("canvas_gradebook_csv", canvasCsv);
       form.append("echo_analytics_csv", echoCsv);
@@ -180,7 +237,6 @@ export default function Page() {
         method: "POST",
         body: form,
       });
-
 
       if (!res.ok) {
         const text = await res.text().catch(() => "");
@@ -285,7 +341,6 @@ export default function Page() {
 
         {step === 3 && (
           <div className="space-y-4">
-            {/* Tabs */}
             <div className="flex flex-wrap gap-2">
               {[
                 ["tables", "Tables"],
@@ -310,35 +365,50 @@ export default function Page() {
 
             {activeTab === "tables" && (
               <div className="grid gap-4">
-                <Table title="Echo Summary" rows={echoSummary} maxRows={50} />
-                <Table title="Echo Modules" rows={echoModules} maxRows={200} />
+                {/* Match Streamlit table column sets + order */}
+                <Table
+                  title="Echo Summary (per media)"
+                  rows={echoSummary}
+                  columns={ECHO_SUMMARY_COLS}
+                  percentCols={ECHO_SUMMARY_PERCENT_COLS}
+                  maxRows={50}
+                />
+                <Table
+                  title="Echo Module Table"
+                  rows={echoModules}
+                  columns={ECHO_MODULE_COLS}
+                  percentCols={ECHO_MODULE_PERCENT_COLS}
+                  maxRows={200}
+                />
+
+                {/* Streamlit shows these too, but they’re not curated via HELP column maps */}
                 <Table title="Echo Students" rows={echoStudents} maxRows={200} />
-                <Table title="Gradebook Summary" rows={gradeSummary} maxRows={50} />
-                <Table title="Gradebook Module Metrics" rows={gradeModuleMetrics} maxRows={200} />
+
+                <Table title="Gradebook Summary Rows" rows={gradeSummary} maxRows={50} />
+
+                <Table
+                  title="Gradebook Module Metrics"
+                  rows={gradeModuleMetrics}
+                  columns={GRADEBOOK_MODULE_COLS}
+                  percentCols={GRADEBOOK_MODULE_PERCENT_COLS}
+                  maxRows={200}
+                />
+
                 <Table title="Gradebook (raw)" rows={gradebook} maxRows={200} />
               </div>
             )}
 
             {activeTab === "charts" && (
               <div className="grid gap-4">
-                <EchoComboChart
-                  moduleRows={echoModules}
-                  studentsTotal={studentsTotal}
-                  title="Echo Data"
-                />
-                <GradebookComboChart
-                  rows={gradeModuleMetrics}
-                  title="Canvas Data"
-                />
+                <EchoComboChart moduleRows={echoModules} studentsTotal={studentsTotal} title="Echo Data" />
+                <GradebookComboChart rows={gradeModuleMetrics} title="Canvas Data" />
               </div>
             )}
 
             {activeTab === "exports" && (
               <div className="rounded-2xl bg-white shadow p-6">
                 <div className="text-lg font-semibold text-slate-900 mb-2">Exports</div>
-                <div className="text-sm text-slate-600">
-                  CSV export buttons can go here (your existing export logic, if any).
-                </div>
+                <div className="text-sm text-slate-600">Add your CSV export buttons here.</div>
               </div>
             )}
 
