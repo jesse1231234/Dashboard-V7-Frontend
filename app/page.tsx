@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-<EchoComboChart moduleRows={echoModules as Row[]} />
-<GradebookComboChart moduleRows={gradeModuleMetrics as Row[]} />
+import EchoComboChart from "./components/charts/EchoComboChart";
+import GradebookComboChart from "./components/charts/GradebookComboChart";
 
 type AnyRow = Record<string, any>;
+type Row = Record<string, any>;<string, any>;
 
 type AnalyzeResponse = {
   kpis?: Record<string, any>;
