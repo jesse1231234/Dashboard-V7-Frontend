@@ -355,6 +355,9 @@ export default function Home() {
 
             {activeTab === "tables" && (
               <div className="grid gap-4">
+                <pre className="text-xs bg-white p-3 rounded-xl overflow-auto border border-slate-200">
+  Echo Summary keys: {JSON.stringify(Object.keys(echoSummary?.[0] ?? {}), null, 2)}
+</pre>
                 <Table
                   title="Echo Summary"
                   rows={echoSummary}
@@ -378,6 +381,17 @@ export default function Home() {
                   columns={gradeSummary?.[0]?.Metric ? ["Metric", ...Object.keys(gradeSummary[0]).filter((k) => k !== "Metric")] : undefined}
                   percentCols={gradeSummaryPercentCols}
                   maxRows={50}
+                />
+                <pre className="text-xs bg-white p-3 rounded-xl overflow-auto border border-slate-200">
+                  Gradebook Module Metrics keys: {JSON.stringify(Object.keys(gradeModuleMetrics?.[0] ?? {}), null, 2)}
+                </pre>
+
+                <Table
+                  title="Gradebook Module Metrics"
+                  rows={gradeModuleMetrics}
+                  columns={GRADEBOOK_MODULE_COLS}
+                  percentCols={GRADEBOOK_MODULE_PERCENT_COLS}
+                  maxRows={200}
                 />
               </div>
             )}
