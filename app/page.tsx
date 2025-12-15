@@ -43,7 +43,7 @@ const rawBase =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const API_BASE_URL = rawBase.replace(/\/+$/, "");
 
-type TabKey = "overview" | "echo" | "grades" | "exports";
+type TabKey = "tables" | "charts" | "exports" | "analysis";
 
 function normalizeKpis(raw: Record<string, any> | null | undefined): Kpi[] {
   if (!raw) return [];
@@ -160,7 +160,7 @@ function DataTable({ title, rows }: { title: string; rows: any[] }) {
 
 export default function HomePage() {
   const [step, setStep] = useState(1);
-  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [activeTab, setActiveTab] = useState<TabKey>("tables");
 
   const [courseId, setCourseId] = useState("");
   const [canvasFile, setCanvasFile] = useState<File | null>(null);
@@ -220,7 +220,7 @@ export default function HomePage() {
     setGradebook([]);
     setGradeSummary([]);
     setGradeModuleMetrics([]);
-    setActiveTab("overview");
+    setActiveTab("tables");
 
     try {
       const formData = new FormData();
@@ -429,10 +429,10 @@ export default function HomePage() {
             <div className="flex gap-2 border-b border-slate-200">
               {(
                 [
-                  ["overview", "Overview"],
-                  ["echo", "Echo & Modules"],
-                  ["grades", "Grades"],
-                  ["exports", "Exports"]
+                  ["tables", "Tables"],
+                  ["charts", "Charts"],
+                  ["exports", "Exports"],
+                  ["analysis", "AI Analysis"]
                 ] as [TabKey, string][]
               ).map(([key, label]) => {
                 const active = activeTab === key;
@@ -455,67 +455,25 @@ export default function HomePage() {
             </div>
 
             {/* Tab content */}
-            {activeTab === "overview" && (
+            {activeTab === "tables" && (
               <div className="space-y-6">
-                <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6">
-                  <h2 className="text-base font-semibold text-slate-900 mb-4">
-                    Key performance indicators
-                  </h2>
-                  {kpis.length === 0 ? (
-                    <p className="text-sm text-slate-400">
-                      No KPIs returned from backend.
-                    </p>
-                  ) : (
-                    <div className="grid gap-4 md:grid-cols-3">
-                      {kpis.map((kpi) => (
-                        <div
-                          key={kpi.key}
-                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 flex flex-col gap-1"
-                        >
-                          <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
-                            {kpi.label}
-                          </span>
-                          <span className="text-xl font-semibold text-slate-900">
-                            {kpi.value}
-                          </span>
-                          {kpi.description && (
-                            <span className="text-xs text-slate-500">
-                              {kpi.description}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6 space-y-3">
-                  <h2 className="text-base font-semibold text-slate-900">
-                    AI summary
-                  </h2>
-                  {analysisError && (
-                    <p className="text-xs text-red-500">
-                      AI analysis error: {analysisError}
-                    </p>
-                  )}
-                  {analysis ? (
-                    <p className="text-sm leading-relaxed text-slate-700 whitespace-pre-line">
-                      {analysis}
-                    </p>
-                  ) : !analysisError ? (
-                    <p className="text-sm text-slate-400">
-                      No AI summary returned.
-                    </p>
-                  ) : null}
-                </div>
+                <DataTable title="Echo Summary" rows={echoSummary} />
+                <DataTable title="Echo Modules" rows={echoModules} />
+                <DataTable title="Echo Students" rows={echoStudents} />
+                <DataTable title="Gradebook (detailed)" rows={gradebook} />
+                <DataTable title="Gradebook Summary" rows={gradeSummary} />
+                <DataTable
+                  title="Module Assignment Metrics"
+                  rows={gradeModuleMetrics}
+                />
               </div>
             )}
 
-            {activeTab === "echo" && (
+            {activeTab === "charts" && (
               <div className="space-y-6">
                 <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6 space-y-4">
                   <h2 className="text-base font-semibold text-slate-900">
-                    Module-level Echo overview
+                    Echo360 Engagement by Module
                   </h2>
                   {moduleChartData.length > 0 ? (
                     <div className="h-64">
@@ -525,7 +483,7 @@ export default function HomePage() {
                           <XAxis dataKey="module" />
                           <YAxis />
                           <Tooltip />
-                          <Bar dataKey="value" />
+                          <Bar dataKey="value" fill="#1f6f4e" />
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -540,20 +498,23 @@ export default function HomePage() {
                   </p>
                 </div>
 
-                <DataTable title="Echo modules" rows={echoModules} />
-                <DataTable title="Echo summary" rows={echoSummary} />
-                <DataTable title="Echo students" rows={echoStudents} />
-              </div>
-            )}
-
-            {activeTab === "grades" && (
-              <div className="space-y-6">
-                <DataTable title="Gradebook (detailed)" rows={gradebook} />
-                <DataTable title="Gradebook summary" rows={gradeSummary} />
-                <DataTable
-                  title="Module assignment metrics"
-                  rows={gradeModuleMetrics}
-                />
+                <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6 space-y-4">
+                  <h2 className="text-base font-semibold text-slate-900">
+                    Canvas Gradebook Performance
+                  </h2>
+                  {gradeModuleMetrics.length > 0 ? (
+                    <div className="h-64">
+                      <p className="text-sm text-slate-500">
+                        Gradebook chart visualization coming soon. 
+                        For now, view the data in the Tables tab.
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400">
+                      No gradebook data to chart.
+                    </p>
+                  )}
+                </div>
               </div>
             )}
 
@@ -617,6 +578,62 @@ export default function HomePage() {
                   >
                     Export module metrics CSV
                   </button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "analysis" && (
+              <div className="space-y-6">
+                <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6">
+                  <h2 className="text-base font-semibold text-slate-900 mb-4">
+                    Key Performance Indicators
+                  </h2>
+                  {kpis.length === 0 ? (
+                    <p className="text-sm text-slate-400">
+                      No KPIs returned from backend.
+                    </p>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-3">
+                      {kpis.map((kpi) => (
+                        <div
+                          key={kpi.key}
+                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 flex flex-col gap-1"
+                        >
+                          <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+                            {kpi.label}
+                          </span>
+                          <span className="text-xl font-semibold text-slate-900">
+                            {kpi.value}
+                          </span>
+                          {kpi.description && (
+                            <span className="text-xs text-slate-500">
+                              {kpi.description}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6 space-y-3">
+                  <h2 className="text-base font-semibold text-slate-900">
+                    AI-Generated Analysis
+                  </h2>
+                  {analysisError && (
+                    <p className="text-xs text-red-500">
+                      AI analysis error: {analysisError}
+                    </p>
+                  )}
+                  {analysis ? (
+                    <p className="text-sm leading-relaxed text-slate-700 whitespace-pre-line">
+                      {analysis}
+                    </p>
+                  ) : !analysisError ? (
+                    <p className="text-sm text-slate-400">
+                      No AI summary returned from backend.
+                    </p>
+                  ) : null}
                 </div>
               </div>
             )}
