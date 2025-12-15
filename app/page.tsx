@@ -11,25 +11,24 @@ type AnalyzeResponse = {
   echo?: {
     summary?: AnyRow[];
     modules?: AnyRow[];
-    students?: AnyRow[];
   };
   grades?: {
-    gradebook?: AnyRow[];
-    summary?: AnyRow[];
+    summary?: AnyRow[]; // includes "Metric"
     module_metrics?: AnyRow[];
   };
   analysis?: {
-    text?: string;
-    error?: string;
+    text?: string | null;
+    error?: string | null;
   };
 };
 
-// ---- Column sets to match Streamlit v6 ----
-// From Dashboard-V6-main/ui/helptext.py defaults
+// ---------- Column presets (match Streamlit intent) ----------
 const ECHO_SUMMARY_COLS = [
   "Media Title",
   "Video Duration",
-  "# of Unique Viewers",
+  "# of Unique Views",
+  "Total Views",
+  "Total Watch Time (Min)",
   "Average View %",
   "% of Students Viewing",
   "% of Video Viewed Overall",
@@ -50,12 +49,7 @@ const GRADEBOOK_MODULE_COLS = [
   "n_assignments",
 ];
 
-// Percent columns Streamlit scales *100 for display
-const ECHO_SUMMARY_PERCENT_COLS = [
-  "Average View %",
-  "% of Students Viewing",
-  "% of Video Viewed Overall",
-];
+const ECHO_SUMMARY_PERCENT_COLS = ["Average View %", "% of Students Viewing", "% of Video Viewed Overall"];
 const ECHO_MODULE_PERCENT_COLS = ["Average View %", "Overall View %"];
 const GRADEBOOK_MODULE_PERCENT_COLS = ["Avg % Turned In", "Avg Average Excluding Zeros"];
 
@@ -70,18 +64,19 @@ function toNumber(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function formatNumberCell(n: number) {
+  if (!Number.isFinite(n)) return "";
+  // Avoid over-formatting integers
+  if (Math.abs(n) >= 1000) return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
 function formatPercentCell(v: any) {
   const n = toNumber(v);
   if (n === null) return "";
-  // If backend sends 0..1 -> 0..100, else assume already percent-like
-  const pct = n <= 1 ? n * 100 : n;
+  // Streamlit logic: most of these are 0-1 proportions -> show as percent
+  const pct = n * 100;
   return `${pct.toFixed(1)}%`;
-}
-
-function formatNumberCell(v: any) {
-  const n = toNumber(v);
-  if (n === null) return "";
-  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 function formatCell(key: string, value: any, percentCols?: string[]) {
@@ -89,14 +84,13 @@ function formatCell(key: string, value: any, percentCols?: string[]) {
   if (percentCols?.includes(key)) return formatPercentCell(value);
   if (typeof value === "number") return formatNumberCell(value);
 
-  // If a numeric-looking string, format it nicely (but keep plain text for other strings)
   const n = toNumber(value);
   if (n !== null && String(value).match(/^[\d,\.\-]+%?$/)) return formatNumberCell(n);
 
   return String(value);
 }
 
-// ---------- Table component with explicit column order ----------
+// ---------- Table component ----------
 function Table({
   title,
   rows,
@@ -112,18 +106,14 @@ function Table({
 }) {
   const cols = useMemo(() => {
     if (!rows || rows.length === 0) return [];
-
-    if (columns && columns.length > 0) {
-      // Only show columns that actually exist in the data
-      const available = new Set(Object.keys(rows[0]));
-      return columns.filter((c) => available.has(c));
-    }
-
-    // Fallback: show whatever exists
-    return Object.keys(rows[0]);
+    const keys = Object.keys(rows[0] ?? {});
+    if (!columns || columns.length === 0) return keys;
+    const set = new Set(keys);
+    // keep only columns that exist
+    return columns.filter((c) => set.has(c));
   }, [rows, columns]);
 
-  const slice = rows?.slice(0, maxRows) ?? [];
+  const slice = useMemo(() => rows.slice(0, maxRows), [rows, maxRows]);
 
   return (
     <div className="rounded-2xl bg-white shadow p-4">
@@ -170,54 +160,41 @@ function Table({
   );
 }
 
-export default function Page() {
+export default function Home() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [activeTab, setActiveTab] = useState<"tables" | "charts" | "exports" | "ai">("tables");
 
-  const [courseCode, setCourseCode] = useState("");
+  const [courseId, setCourseId] = useState("");
   const [canvasCsv, setCanvasCsv] = useState<File | null>(null);
   const [echoCsv, setEchoCsv] = useState<File | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
 
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
   const echoSummary = result?.echo?.summary ?? [];
   const echoModules = result?.echo?.modules ?? [];
-  const echoStudents = result?.echo?.students ?? [];
 
   const gradeSummary = result?.grades?.summary ?? [];
   const gradeModuleMetrics = result?.grades?.module_metrics ?? [];
-  const gradebook = result?.grades?.gradebook ?? [];
 
-  const studentsTotal = useMemo(() => {
-    // Prefer explicit total if present in echo summary
-    if (echoSummary?.[0]) {
-      const row = echoSummary[0];
-      for (const k of ["# Students", "# of Students", "Students Total", "Total Students", "students_total"]) {
-        if (row[k] !== undefined) {
-          const n = toNumber(row[k]);
-          if (n !== null && n > 0) return Math.round(n);
-        }
-      }
-    }
-    // fallback: one row per student
-    if (echoStudents.length > 0) return echoStudents.length;
-    return null;
-  }, [echoSummary, echoStudents]);
+  // Gradebook Summary Rows: in Streamlit, everything in this table is a percent (except the row label).
+  const gradeSummaryPercentCols = useMemo(() => {
+    if (!gradeSummary?.[0]) return [];
+    return Object.keys(gradeSummary[0]).filter((k) => k !== "Metric");
+  }, [gradeSummary]);
 
   async function runAnalysis() {
     setError(null);
 
     if (!apiBase) {
-      setError("Missing NEXT_PUBLIC_API_BASE_URL in Vercel environment variables.");
+      setError("Missing NEXT_PUBLIC_API_BASE_URL environment variable in Vercel.");
       return;
     }
-    if (!courseCode.trim()) {
-      setError("Please enter a course code.");
+    if (!courseId.trim()) {
+      setError("Please enter a Canvas Course ID (number).");
       return;
     }
     if (!canvasCsv || !echoCsv) {
@@ -225,22 +202,22 @@ export default function Page() {
       return;
     }
 
-    setLoading(true);
     try {
+      setLoading(true);
+
       const form = new FormData();
-      // IMPORTANT: match your backend’s required field names (per your 422)
-      form.append("course_id", courseCode.trim());
+      form.append("course_id", courseId.trim());
       form.append("canvas_gradebook_csv", canvasCsv);
       form.append("echo_analytics_csv", echoCsv);
 
-      const res = await fetch(`${apiBase.replace(/\/+$/, "")}/analyze`, {
+      const res = await fetch(`${apiBase.replace(/\/$/, "")}/analyze`, {
         method: "POST",
         body: form,
       });
 
       if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(`Backend error (${res.status}): ${text || res.statusText}`);
+        const txt = await res.text();
+        throw new Error(`Backend error (${res.status}): ${txt}`);
       }
 
       const json = (await res.json()) as AnalyzeResponse;
@@ -248,7 +225,7 @@ export default function Page() {
       setStep(3);
       setActiveTab("tables");
     } catch (e: any) {
-      setError(e?.message ?? "Unknown error");
+      setError(e?.message ?? String(e));
     } finally {
       setLoading(false);
     }
@@ -256,28 +233,31 @@ export default function Page() {
 
   return (
     <main className="min-h-screen bg-slate-100">
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        <div className="mb-6">
-          <div className="text-2xl font-bold text-slate-900">Course Load / Engagement Dashboard</div>
-          <div className="text-sm text-slate-600">Step {step} of 3</div>
-        </div>
+      <div className="mx-auto max-w-6xl p-6">
+        <div className="text-2xl font-bold text-slate-900 mb-1">CLE Analytics Dashboard</div>
+        <div className="text-sm text-slate-600 mb-6">Vercel (Frontend) + Render (Backend)</div>
 
-        {error ? (
-          <div className="mb-4 rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+        {error && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             {error}
           </div>
-        ) : null}
+        )}
 
         {step === 1 && (
           <div className="rounded-2xl bg-white shadow p-6">
-            <div className="text-lg font-semibold text-slate-900 mb-2">Step 1: Course</div>
-            <label className="block text-sm text-slate-700 mb-1">Course Code</label>
+            <div className="text-lg font-semibold text-slate-900 mb-2">Step 1: Enter Course</div>
+            <div className="text-sm text-slate-600 mb-3">
+              Use the numeric Canvas Course ID (the number in the course URL).
+            </div>
+
+            <label className="block text-sm text-slate-700 mb-1">Canvas Course ID</label>
             <input
-              value={courseCode}
-              onChange={(e) => setCourseCode(e.target.value)}
+              value={courseId}
+              onChange={(e) => setCourseId(e.target.value)}
               className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-              placeholder="e.g., ABCD-101-801"
+              placeholder="e.g., 123456"
             />
+
             <div className="mt-4 flex gap-2">
               <button
                 onClick={() => setStep(2)}
@@ -308,7 +288,7 @@ export default function Page() {
               </div>
 
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Echo360 CSV</label>
+                <label className="block text-sm text-slate-700 mb-1">Echo360 Analytics CSV</label>
                 <input
                   type="file"
                   accept=".csv"
@@ -321,7 +301,14 @@ export default function Page() {
               </div>
             </div>
 
-            <div className="mt-5 flex items-center gap-2">
+            <div className="mt-6 flex items-center gap-3">
+              <button
+                onClick={() => setStep(1)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-800"
+              >
+                Back
+              </button>
+
               <button
                 onClick={runAnalysis}
                 disabled={loading}
@@ -329,50 +316,38 @@ export default function Page() {
               >
                 {loading ? "Running..." : "Run Analysis"}
               </button>
-              <button
-                onClick={() => setStep(1)}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-sm"
-              >
-                Back
-              </button>
             </div>
           </div>
         )}
 
         {step === 3 && (
-          <div className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              {[
-                ["tables", "Tables"],
-                ["charts", "Charts"],
-                ["exports", "Exports"],
-                ["ai", "AI Analysis"],
-              ].map(([key, label]) => (
+          <div>
+            <div className="mb-4 flex flex-wrap gap-2">
+              {(["tables", "charts", "exports", "ai"] as const).map((t) => (
                 <button
-                  key={key}
-                  onClick={() => setActiveTab(key as any)}
-                  className={
-                    "rounded-xl px-4 py-2 text-sm border " +
-                    (activeTab === key
-                      ? "bg-slate-900 text-white border-slate-900"
-                      : "bg-white text-slate-900 border-slate-200")
-                  }
+                  key={t}
+                  onClick={() => setActiveTab(t)}
+                  className={`rounded-xl px-4 py-2 text-sm ${
+                    activeTab === t
+                      ? "bg-slate-900 text-white"
+                      : "bg-white border border-slate-200 text-slate-800"
+                  }`}
                 >
-                  {label}
+                  {t === "tables" ? "Tables" : t === "charts" ? "Charts" : t === "exports" ? "Exports" : "AI Analysis"}
                 </button>
               ))}
             </div>
 
             {activeTab === "tables" && (
               <div className="grid gap-4">
-                {/* Match Streamlit table column sets + order */}
                 <Table
-                  title="Echo Summary (per media)"
+                  title="Echo Summary"
                   rows={echoSummary}
                   columns={ECHO_SUMMARY_COLS}
                   percentCols={ECHO_SUMMARY_PERCENT_COLS}
-                  maxRows={50}
+                  maxRows={200}
                 />
+
                 <Table
                   title="Echo Module Table"
                   rows={echoModules}
@@ -381,10 +356,14 @@ export default function Page() {
                   maxRows={200}
                 />
 
-                {/* Streamlit shows these too, but they’re not curated via HELP column maps */}
-                <Table title="Echo Students" rows={echoStudents} maxRows={200} />
-
-                <Table title="Gradebook Summary Rows" rows={gradeSummary} maxRows={50} />
+                <Table
+                  title="Gradebook Summary Rows"
+                  rows={gradeSummary}
+                  // Let it show whatever assignment columns are present, but keep Metric first if provided
+                  columns={gradeSummary?.[0]?.Metric ? ["Metric", ...Object.keys(gradeSummary[0]).filter((k) => k !== "Metric")] : undefined}
+                  percentCols={gradeSummaryPercentCols}
+                  maxRows={50}
+                />
 
                 <Table
                   title="Gradebook Module Metrics"
@@ -393,15 +372,20 @@ export default function Page() {
                   percentCols={GRADEBOOK_MODULE_PERCENT_COLS}
                   maxRows={200}
                 />
-
-                <Table title="Gradebook (raw)" rows={gradebook} maxRows={200} />
               </div>
             )}
 
             {activeTab === "charts" && (
               <div className="grid gap-4">
-                <EchoComboChart moduleRows={echoModules} studentsTotal={studentsTotal} title="Echo Data" />
-                <GradebookComboChart rows={gradeModuleMetrics} title="Canvas Data" />
+                <div className="rounded-2xl bg-white shadow p-6">
+                  <div className="text-lg font-semibold text-slate-900 mb-2">Echo Chart</div>
+                  <EchoComboChart rows={echoModules} />
+                </div>
+
+                <div className="rounded-2xl bg-white shadow p-6">
+                  <div className="text-lg font-semibold text-slate-900 mb-2">Gradebook Chart</div>
+                  <GradebookComboChart rows={gradeModuleMetrics} />
+                </div>
               </div>
             )}
 
