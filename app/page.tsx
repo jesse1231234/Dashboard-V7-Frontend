@@ -386,13 +386,7 @@ export default function Home() {
                   Gradebook Module Metrics keys: {JSON.stringify(Object.keys(gradeModuleMetrics?.[0] ?? {}), null, 2)}
                 </pre>
 
-                <Table
-                  title="Gradebook Module Metrics"
-                  rows={gradeModuleMetrics}
-                  columns={GRADEBOOK_MODULE_COLS}
-                  percentCols={GRADEBOOK_MODULE_PERCENT_COLS}
-                  maxRows={200}
-                />
+                
               </div>
             )}
 
