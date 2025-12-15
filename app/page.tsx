@@ -82,10 +82,17 @@ function formatPercentCell(v: any) {
 
 function formatCell(key: string, value: any, percentCols?: string[]) {
   if (value === null || value === undefined) return "";
-  if (percentCols?.includes(key)) return formatPercentCell(value);
-  if (typeof value === "number") return formatNumberCell(value);
 
+  // Explicit percent columns (preferred)
+  if (percentCols?.includes(key)) return formatPercentCell(value);
+
+  // Auto percent: if header includes '%' and value is a proportion (0-1-ish)
   const n = toNumber(value);
+  if (key.includes("%") && n !== null && n >= 0 && n <= 1.5) {
+    return formatPercentCell(n);
+  }
+
+  if (typeof value === "number") return formatNumberCell(value);
   if (n !== null && String(value).match(/^[\d,\.\-]+%?$/)) return formatNumberCell(n);
 
   return String(value);
@@ -106,13 +113,22 @@ function Table({
   maxRows?: number;
 }) {
   const cols = useMemo(() => {
-    if (!rows || rows.length === 0) return [];
-    const keys = Object.keys(rows[0] ?? {});
-    if (!columns || columns.length === 0) return keys;
-    const set = new Set(keys);
-    // keep only columns that exist
-    return columns.filter((c) => set.has(c));
-  }, [rows, columns]);
+  if (!rows || rows.length === 0) return [];
+  const keys = Object.keys(rows[0] ?? {});
+  if (!columns || columns.length === 0) return keys;
+
+  const set = new Set(keys);
+  const picked = columns.filter((c) => set.has(c));
+
+  // IMPORTANT:
+  // If the backend headers don't match our preferred list (common across versions),
+  // don't collapse to a 1-column table. Fall back to showing all columns.
+  // (We allow 1 because sometimes a table truly has only one column, but that’s rare here.)
+  if (picked.length <= 1 && keys.length > 1) return keys;
+
+  return picked;
+}, [rows, columns]);
+
 
   const slice = useMemo(() => rows.slice(0, maxRows), [rows, maxRows]);
 
