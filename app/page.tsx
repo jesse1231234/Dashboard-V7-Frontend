@@ -143,14 +143,14 @@ function Table({
       {slice.length === 0 ? (
         <div className="text-sm text-slate-600">No data.</div>
       ) : (
-        <div className="overflow-auto rounded-xl border border-slate-200">
-          <table className="min-w-full text-sm">
+        <div className="overflow-x-auto overflow-y-auto rounded-xl border border-slate-200">
+          <table className="min-w-full text-sm table-fixed">
             <thead className="bg-slate-50">
               <tr>
                 {cols.map((c) => (
                   <th
                     key={c}
-                    className="text-left px-3 py-2 font-semibold text-slate-700 whitespace-nowrap"
+                    className="text-left px-3 py-2 font-semibold text-slate-700 align-top max-w-[260px] break-words"
                   >
                     {c}
                   </th>
@@ -161,7 +161,7 @@ function Table({
               {slice.map((r, idx) => (
                 <tr key={idx} className="border-t border-slate-100">
                   {cols.map((c) => (
-                    <td key={c} className="px-3 py-2 text-slate-800 whitespace-nowrap">
+                    <td key={c} className="px-3 py-2 text-slate-800 align-top max-w-[260px] break-words">
                       {formatCell(c, r[c], percentCols)}
                     </td>
                   ))}
