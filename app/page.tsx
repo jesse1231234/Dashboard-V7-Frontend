@@ -1,643 +1,359 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid
-} from "recharts";
+import React, { useMemo, useState } from "react";
+import EchoComboChart from "./components/charts/EchoComboChart";
+import GradebookComboChart from "./components/charts/GradebookComboChart";
 
-type Kpi = {
-  key: string;
-  label: string;
-  value: string | number;
-  description?: string;
-};
+type AnyRow = Record<string, any>;
 
 type AnalyzeResponse = {
-  course_id: number;
-  student_count: number | null;
-  kpis: Record<string, any>;
-  echo: {
-    summary: any[];
-    modules: any[];
-    students: any[];
+  kpis?: Record<string, any>;
+  echo?: {
+    summary?: AnyRow[];
+    modules?: AnyRow[];
+    students?: AnyRow[];
   };
-  grades: {
-    gradebook: any[];
-    summary: any[];
-    module_metrics: any[];
+  grades?: {
+    gradebook?: AnyRow[];
+    summary?: AnyRow[];
+    module_metrics?: AnyRow[];
   };
-  analysis: {
-    text: string | null;
-    error: string | null;
+  analysis?: {
+    text?: string;
+    error?: string;
   };
 };
 
-// Normalize base URL (strip trailing slashes)
-const rawBase =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-const API_BASE_URL = rawBase.replace(/\/+$/, "");
-
-type TabKey = "tables" | "charts" | "exports" | "analysis";
-
-function normalizeKpis(raw: Record<string, any> | null | undefined): Kpi[] {
-  if (!raw) return [];
-  return Object.entries(raw).map(([key, value]) => {
-    if (
-      value &&
-      typeof value === "object" &&
-      "label" in value &&
-      "value" in value
-    ) {
-      return {
-        key,
-        label: String((value as any).label),
-        value: (value as any).value as string | number,
-        description:
-          "description" in value ? String((value as any).description) : undefined
-      };
-    }
-    return {
-      key,
-      label: key,
-      value: value as string | number,
-      description: undefined
-    };
-  });
+function toNumber(v: any): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  const s = String(v).trim();
+  if (!s) return null;
+  const cleaned = s.replace(/%/g, "").replace(/,/g, "");
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
 }
 
-function downloadCsv(filename: string, rows: any[]) {
-  if (!rows || rows.length === 0) return;
-
-  const headers = Object.keys(rows[0]);
-  const escape = (value: any) => {
-    if (value == null) return "";
-    const str = String(value);
-    if (str.includes('"') || str.includes(",") || str.includes("\n")) {
-      return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
-  };
-
-  const csv = [
-    headers.join(","),
-    ...rows.map((row) =>
-      headers.map((h) => escape((row as any)[h])).join(",")
-    )
-  ].join("\n");
-
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `${filename}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
+function isPercentKey(key: string) {
+  const k = key.toLowerCase();
+  return (
+    k.includes("percent") ||
+    k.includes("%") ||
+    k.includes("pct") ||
+    k.includes("rate") ||
+    k.includes("average view") ||
+    k.includes("overall view") ||
+    k.includes("avg %")
+  );
 }
 
-function DataTable({ title, rows }: { title: string; rows: any[] }) {
-  if (!rows || rows.length === 0) {
-    return (
-      <div className="space-y-2">
-        <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
-        <p className="text-xs text-slate-400">No data returned.</p>
-      </div>
-    );
-  }
+function formatPercent(v: any) {
+  const n = toNumber(v);
+  if (n === null) return "";
+  // If already 0..100 keep, else assume 0..1
+  const pct = n > 1 ? n : n * 100;
+  return `${pct.toFixed(1)}%`;
+}
 
-  const columns = Object.keys(rows[0]);
+function formatCell(key: string, value: any) {
+  if (value === null || value === undefined) return "";
+  if (isPercentKey(key)) return formatPercent(value);
+  if (typeof value === "number") return value.toLocaleString();
+  return String(value);
+}
+
+function Table({ title, rows, maxRows = 50 }: { title: string; rows: AnyRow[]; maxRows?: number }) {
+  const cols = useMemo(() => {
+    if (!rows || rows.length === 0) return [];
+    return Object.keys(rows[0]);
+  }, [rows]);
+
+  const slice = rows?.slice(0, maxRows) ?? [];
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
-        <button
-          type="button"
-          className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700"
-          onClick={() => downloadCsv(title.replace(/\s+/g, "_"), rows)}
-        >
-          Export CSV
-        </button>
+    <div className="rounded-2xl bg-white shadow p-4">
+      <div className="mb-3">
+        <div className="text-sm font-semibold text-slate-900">{title}</div>
+        <div className="text-xs text-slate-500">
+          Showing {slice.length.toLocaleString()}
+          {rows.length > slice.length ? ` of ${rows.length.toLocaleString()}` : ""} rows
+        </div>
       </div>
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="min-w-full text-xs text-left">
-          <thead>
-            <tr className="border-b border-slate-200 bg-slate-50">
-              {columns.map((col) => (
-                <th
-                  key={col}
-                  className="px-3 py-2 text-[11px] font-semibold text-slate-600"
-                >
-                  {col}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, idx) => (
-              <tr
-                key={idx}
-                className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60"
-              >
-                {columns.map((col) => (
-                  <td key={col} className="px-3 py-2 text-[11px] text-slate-700">
-                    {String((row as any)[col] ?? "")}
-                  </td>
+
+      {slice.length === 0 ? (
+        <div className="text-sm text-slate-600">No data.</div>
+      ) : (
+        <div className="overflow-auto rounded-xl border border-slate-200">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                {cols.map((c) => (
+                  <th key={c} className="text-left px-3 py-2 font-semibold text-slate-700 whitespace-nowrap">
+                    {c}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {slice.map((r, idx) => (
+                <tr key={idx} className="border-t border-slate-100">
+                  {cols.map((c) => (
+                    <td key={c} className="px-3 py-2 text-slate-800 whitespace-nowrap">
+                      {formatCell(c, r[c])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
 
-export default function HomePage() {
-  const [step, setStep] = useState(1);
-  const [activeTab, setActiveTab] = useState<TabKey>("tables");
+export default function Page() {
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [activeTab, setActiveTab] = useState<"tables" | "charts" | "exports" | "ai">("tables");
 
-  const [courseId, setCourseId] = useState("");
-  const [canvasFile, setCanvasFile] = useState<File | null>(null);
-  const [echoFile, setEchoFile] = useState<File | null>(null);
+  const [courseCode, setCourseCode] = useState("");
+  const [canvasCsv, setCanvasCsv] = useState<File | null>(null);
+  const [echoCsv, setEchoCsv] = useState<File | null>(null);
 
   const [loading, setLoading] = useState(false);
-  const [kpis, setKpis] = useState<Kpi[]>([]);
-  const [analysis, setAnalysis] = useState<string>("");
-  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const [echoSummary, setEchoSummary] = useState<any[]>([]);
-  const [echoModules, setEchoModules] = useState<any[]>([]);
-  const [echoStudents, setEchoStudents] = useState<any[]>([]);
+  const [result, setResult] = useState<AnalyzeResponse | null>(null);
 
-  const [gradebook, setGradebook] = useState<any[]>([]);
-  const [gradeSummary, setGradeSummary] = useState<any[]>([]);
-  const [gradeModuleMetrics, setGradeModuleMetrics] = useState<any[]>([]);
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
-  const canContinueStep1 = !!courseId;
-  const canContinueStep2 = !!canvasFile && !!echoFile;
+  const echoModules = result?.echo?.modules ?? [];
+  const echoSummary = result?.echo?.summary ?? [];
+  const echoStudents = result?.echo?.students ?? [];
 
-  const moduleChartData = useMemo(() => {
-    if (!echoModules || echoModules.length === 0) return [];
+  const gradebook = result?.grades?.gradebook ?? [];
+  const gradeSummary = result?.grades?.summary ?? [];
+  const gradeModuleMetrics = result?.grades?.module_metrics ?? [];
 
-    return echoModules.map((row, idx) => {
-      const r = row as any;
-      const moduleName =
-        r["Module"] ??
-        r["module"] ??
-        r["Module Name"] ??
-        r["module_name"] ??
-        `Module ${idx + 1}`;
+  // Best-effort studentsTotal (you can tighten this once you confirm your summary schema)
+  const studentsTotal = useMemo(() => {
+    // Prefer an explicit field if present in echo summary
+    if (echoSummary && echoSummary.length > 0) {
+      const row = echoSummary[0];
+      const candidates = ["Students Total", "Students", "# of Students", "Total Students", "students_total"];
+      for (const k of candidates) {
+        if (row[k] !== undefined) {
+          const n = toNumber(row[k]);
+          if (n !== null && n > 0) return Math.round(n);
+        }
+      }
+    }
+    // fallback: infer from echoStudents length (if one row per student)
+    if (echoStudents && echoStudents.length > 0) return echoStudents.length;
+    return null;
+  }, [echoSummary, echoStudents]);
 
-      // Pick first numeric field as "value" if a specific metric isn't obvious
-      const numericKeys = Object.keys(r).filter((k) => {
-        const v = r[k];
-        return typeof v === "number";
-      });
+  async function runAnalysis() {
+    setError(null);
 
-      const metricKey = numericKeys[0];
-      const value = metricKey ? Number(r[metricKey]) : 0;
-
-      return { module: String(moduleName), value, metricKey };
-    });
-  }, [echoModules]);
-
-  async function handleRunAnalysis() {
-    if (!canvasFile || !echoFile || !courseId) return;
+    if (!apiBase) {
+      setError("Missing NEXT_PUBLIC_API_BASE_URL in Vercel environment variables.");
+      return;
+    }
+    if (!courseCode.trim()) {
+      setError("Please enter a course code.");
+      return;
+    }
+    if (!canvasCsv || !echoCsv) {
+      setError("Please upload both CSV files.");
+      return;
+    }
 
     setLoading(true);
-    setAnalysis("");
-    setAnalysisError(null);
-    setKpis([]);
-    setEchoSummary([]);
-    setEchoModules([]);
-    setEchoStudents([]);
-    setGradebook([]);
-    setGradeSummary([]);
-    setGradeModuleMetrics([]);
-    setActiveTab("tables");
-
     try {
-      const formData = new FormData();
-      formData.append("course_id", courseId);
-      formData.append("canvas_gradebook_csv", canvasFile);
-      formData.append("echo_analytics_csv", echoFile);
+      const form = new FormData();
+      form.append("course_code", courseCode.trim());
+      form.append("canvas_file", canvasCsv);
+      form.append("echo_file", echoCsv);
 
-      const res = await fetch(`${API_BASE_URL}/analyze`, {
+      const res = await fetch(`${apiBase.replace(/\/+$/, "")}/analyze`, {
         method: "POST",
-        body: formData
+        body: form,
       });
 
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`API error: ${res.status} – ${text}`);
+        const text = await res.text().catch(() => "");
+        throw new Error(`Backend error (${res.status}): ${text || res.statusText}`);
       }
 
-      const data = (await res.json()) as AnalyzeResponse;
-
-      setKpis(normalizeKpis(data.kpis));
-      setAnalysis(data.analysis?.text ?? "");
-      setAnalysisError(data.analysis?.error ?? null);
-
-      setEchoSummary(data.echo?.summary ?? []);
-      setEchoModules(data.echo?.modules ?? []);
-      setEchoStudents(data.echo?.students ?? []);
-
-      setGradebook(data.grades?.gradebook ?? []);
-      setGradeSummary(data.grades?.summary ?? []);
-      setGradeModuleMetrics(data.grades?.module_metrics ?? []);
-
+      const json = (await res.json()) as AnalyzeResponse;
+      setResult(json);
       setStep(3);
-    } catch (err: any) {
-      console.error(err);
-      setAnalysisError(
-        err?.message ?? "Something went wrong calling the backend."
-      );
+      setActiveTab("tables");
+    } catch (e: any) {
+      setError(e?.message ?? "Unknown error");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 flex flex-col">
-      <header className="border-b bg-white">
-        <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-full bg-csuGreen flex items-center justify-center text-xs font-semibold text-white">
-              CLE
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold text-slate-900">
-                Course Analytics Dashboard
-              </h1>
-              <p className="text-xs text-slate-500">
-                Canvas + Echo360 · Instructor-facing insights
-              </p>
-            </div>
-          </div>
+    <main className="min-h-screen bg-slate-100">
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        <div className="mb-6">
+          <div className="text-2xl font-bold text-slate-900">Course Load / Engagement Dashboard</div>
+          <div className="text-sm text-slate-600">Step {step} of 3</div>
         </div>
-      </header>
 
-      <div className="mx-auto mt-8 mb-16 max-w-6xl px-6 space-y-6">
-        {/* Step indicator */}
-        <ol className="flex items-center justify-between gap-4 text-sm">
-          {["Course selection", "Upload data", "Review insights"].map(
-            (label, idx) => {
-              const index = idx + 1;
-              const active = step === index;
-              const done = step > index;
-              return (
-                <li key={label} className="flex-1 flex items-center gap-3">
-                  <div
-                    className={[
-                      "flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold",
-                      done
-                        ? "bg-csuGreen text-white border-csuGreen"
-                        : active
-                        ? "bg-emerald-50 text-csuGreen border-csuGreen"
-                        : "bg-white text-slate-400 border-slate-300"
-                    ].join(" ")}
-                  >
-                    {index}
-                  </div>
-                  <span
-                    className={
-                      done || active ? "text-slate-900" : "text-slate-400"
-                    }
-                  >
-                    {label}
-                  </span>
-                </li>
-              );
-            }
-          )}
-        </ol>
+        {error ? (
+          <div className="mb-4 rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+            {error}
+          </div>
+        ) : null}
 
-        {/* Step 1: Course ID */}
         {step === 1 && (
-          <section className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6 space-y-4">
-            <h2 className="text-base font-semibold text-slate-900">
-              Select course
-            </h2>
-            <p className="text-sm text-slate-500">
-              Enter the Canvas course ID. The backend uses a pre-configured
-              Canvas base URL and API token from its environment.
-            </p>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="flex flex-col gap-1 md:col-span-1">
-                <label className="text-xs font-medium text-slate-700">
-                  Course ID
-                </label>
-                <input
-                  type="text"
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-csuGreen"
-                  value={courseId}
-                  onChange={(e) => setCourseId(e.target.value)}
-                  placeholder="e.g. 12345"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-2">
+          <div className="rounded-2xl bg-white shadow p-6">
+            <div className="text-lg font-semibold text-slate-900 mb-2">Step 1: Course</div>
+            <label className="block text-sm text-slate-700 mb-1">Course Code</label>
+            <input
+              value={courseCode}
+              onChange={(e) => setCourseCode(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+              placeholder="e.g., ABCD-101-801"
+            />
+            <div className="mt-4 flex gap-2">
               <button
-                type="button"
-                className="rounded-xl border border-slate-300 px-4 py-2 text-sm text-slate-700"
-                disabled
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                className="rounded-xl bg-csuGreen px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
-                disabled={!canContinueStep1}
                 onClick={() => setStep(2)}
+                className="rounded-xl bg-slate-900 text-white px-4 py-2 text-sm"
               >
                 Continue
               </button>
             </div>
-          </section>
+          </div>
         )}
 
-        {/* Step 2: Uploads */}
         {step === 2 && (
-          <section className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6 space-y-4">
-            <h2 className="text-base font-semibold text-slate-900">
-              Upload Canvas &amp; Echo360 data
-            </h2>
-            <p className="text-sm text-slate-500">
-              Use the same CSV exports you currently use in the Streamlit
-              version.
-            </p>
+          <div className="rounded-2xl bg-white shadow p-6">
+            <div className="text-lg font-semibold text-slate-900 mb-2">Step 2: Upload CSVs</div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-medium text-slate-700">
-                  Canvas gradebook CSV
-                </label>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Canvas Gradebook CSV</label>
                 <input
                   type="file"
                   accept=".csv"
-                  onChange={(e) =>
-                    setCanvasFile(e.target.files?.[0] ?? null)
-                  }
-                  className="block text-sm text-slate-600"
+                  onChange={(e) => setCanvasCsv(e.target.files?.[0] ?? null)}
+                  className="w-full text-sm"
                 />
+                <div className="text-xs text-slate-500 mt-1">
+                  {canvasCsv ? canvasCsv.name : "No file selected"}
+                </div>
               </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-medium text-slate-700">
-                  Echo360 analytics CSV
-                </label>
+
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Echo360 CSV</label>
                 <input
                   type="file"
                   accept=".csv"
-                  onChange={(e) => setEchoFile(e.target.files?.[0] ?? null)}
-                  className="block text-sm text-slate-600"
+                  onChange={(e) => setEchoCsv(e.target.files?.[0] ?? null)}
+                  className="w-full text-sm"
                 />
+                <div className="text-xs text-slate-500 mt-1">
+                  {echoCsv ? echoCsv.name : "No file selected"}
+                </div>
               </div>
             </div>
 
-            <div className="flex justify-between items-center pt-2">
+            <div className="mt-5 flex items-center gap-2">
               <button
-                type="button"
-                className="rounded-xl border border-slate-300 px-4 py-2 text-sm text-slate-700"
+                onClick={runAnalysis}
+                disabled={loading}
+                className="rounded-xl bg-slate-900 text-white px-4 py-2 text-sm disabled:opacity-60"
+              >
+                {loading ? "Running..." : "Run Analysis"}
+              </button>
+              <button
                 onClick={() => setStep(1)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm"
               >
                 Back
               </button>
-              <button
-                type="button"
-                className="rounded-xl bg-csuGreen px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
-                disabled={!canContinueStep2 || loading}
-                onClick={handleRunAnalysis}
-              >
-                {loading ? "Analyzing…" : "Run analysis"}
-              </button>
             </div>
-          </section>
+          </div>
         )}
 
-        {/* Step 3: Tabbed insights */}
         {step === 3 && (
-          <section className="space-y-4">
+          <div className="space-y-4">
             {/* Tabs */}
-            <div className="flex gap-2 border-b border-slate-200">
-              {(
-                [
-                  ["tables", "Tables"],
-                  ["charts", "Charts"],
-                  ["exports", "Exports"],
-                  ["analysis", "AI Analysis"]
-                ] as [TabKey, string][]
-              ).map(([key, label]) => {
-                const active = activeTab === key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    className={[
-                      "px-3 py-2 text-xs font-medium border-b-2",
-                      active
-                        ? "border-csuGreen text-csuGreen"
-                        : "border-transparent text-slate-500 hover:text-slate-700"
-                    ].join(" ")}
-                    onClick={() => setActiveTab(key)}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
+            <div className="flex flex-wrap gap-2">
+              {[
+                ["tables", "Tables"],
+                ["charts", "Charts"],
+                ["exports", "Exports"],
+                ["ai", "AI Analysis"],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key as any)}
+                  className={
+                    "rounded-xl px-4 py-2 text-sm border " +
+                    (activeTab === key
+                      ? "bg-slate-900 text-white border-slate-900"
+                      : "bg-white text-slate-900 border-slate-200")
+                  }
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
-            {/* Tab content */}
             {activeTab === "tables" && (
-              <div className="space-y-6">
-                <DataTable title="Echo Summary" rows={echoSummary} />
-                <DataTable title="Echo Modules" rows={echoModules} />
-                <DataTable title="Echo Students" rows={echoStudents} />
-                <DataTable title="Gradebook (detailed)" rows={gradebook} />
-                <DataTable title="Gradebook Summary" rows={gradeSummary} />
-                <DataTable
-                  title="Module Assignment Metrics"
-                  rows={gradeModuleMetrics}
-                />
+              <div className="grid gap-4">
+                <Table title="Echo Summary" rows={echoSummary} maxRows={50} />
+                <Table title="Echo Modules" rows={echoModules} maxRows={200} />
+                <Table title="Echo Students" rows={echoStudents} maxRows={200} />
+                <Table title="Gradebook Summary" rows={gradeSummary} maxRows={50} />
+                <Table title="Gradebook Module Metrics" rows={gradeModuleMetrics} maxRows={200} />
+                <Table title="Gradebook (raw)" rows={gradebook} maxRows={200} />
               </div>
             )}
 
             {activeTab === "charts" && (
-              <div className="space-y-6">
-                <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6 space-y-4">
-                  <h2 className="text-base font-semibold text-slate-900">
-                    Echo360 Engagement by Module
-                  </h2>
-                  {moduleChartData.length > 0 ? (
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={moduleChartData}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="module" />
-                          <YAxis />
-                          <Tooltip />
-                          <Bar dataKey="value" fill="#1f6f4e" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-400">
-                      Not enough numeric data to render a chart.
-                    </p>
-                  )}
-                  <p className="text-[11px] text-slate-500">
-                    Showing the first numeric metric from the module-level Echo
-                    data. You can refine which metric is charted later.
-                  </p>
-                </div>
-
-                <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6 space-y-4">
-                  <h2 className="text-base font-semibold text-slate-900">
-                    Canvas Gradebook Performance
-                  </h2>
-                  {gradeModuleMetrics.length > 0 ? (
-                    <div className="h-64">
-                      <p className="text-sm text-slate-500">
-                        Gradebook chart visualization coming soon. 
-                        For now, view the data in the Tables tab.
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-400">
-                      No gradebook data to chart.
-                    </p>
-                  )}
-                </div>
+              <div className="grid gap-4">
+                <EchoComboChart
+                  moduleRows={echoModules}
+                  studentsTotal={studentsTotal}
+                  title="Echo Data"
+                />
+                <GradebookComboChart
+                  rows={gradeModuleMetrics}
+                  title="Canvas Data"
+                />
               </div>
             )}
 
             {activeTab === "exports" && (
-              <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6 space-y-4">
-                <h2 className="text-base font-semibold text-slate-900">
-                  Export data
-                </h2>
-                <p className="text-sm text-slate-500">
-                  Download any of the tables as CSV files for further analysis
-                  or sharing.
-                </p>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <button
-                    type="button"
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-700 text-left"
-                    onClick={() =>
-                      downloadCsv("echo_modules", echoModules)
-                    }
-                  >
-                    Export Echo modules CSV
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-700 text-left"
-                    onClick={() => downloadCsv("echo_summary", echoSummary)}
-                  >
-                    Export Echo summary CSV
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-700 text-left"
-                    onClick={() =>
-                      downloadCsv("echo_students", echoStudents)
-                    }
-                  >
-                    Export Echo students CSV
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-700 text-left"
-                    onClick={() => downloadCsv("gradebook", gradebook)}
-                  >
-                    Export gradebook CSV
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-700 text-left"
-                    onClick={() =>
-                      downloadCsv("grade_summary", gradeSummary)
-                    }
-                  >
-                    Export grade summary CSV
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-700 text-left"
-                    onClick={() =>
-                      downloadCsv("grade_module_metrics", gradeModuleMetrics)
-                    }
-                  >
-                    Export module metrics CSV
-                  </button>
+              <div className="rounded-2xl bg-white shadow p-6">
+                <div className="text-lg font-semibold text-slate-900 mb-2">Exports</div>
+                <div className="text-sm text-slate-600">
+                  CSV export buttons can go here (your existing export logic, if any).
                 </div>
               </div>
             )}
 
-            {activeTab === "analysis" && (
-              <div className="space-y-6">
-                <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6">
-                  <h2 className="text-base font-semibold text-slate-900 mb-4">
-                    Key Performance Indicators
-                  </h2>
-                  {kpis.length === 0 ? (
-                    <p className="text-sm text-slate-400">
-                      No KPIs returned from backend.
-                    </p>
-                  ) : (
-                    <div className="grid gap-4 md:grid-cols-3">
-                      {kpis.map((kpi) => (
-                        <div
-                          key={kpi.key}
-                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 flex flex-col gap-1"
-                        >
-                          <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">
-                            {kpi.label}
-                          </span>
-                          <span className="text-xl font-semibold text-slate-900">
-                            {kpi.value}
-                          </span>
-                          {kpi.description && (
-                            <span className="text-xs text-slate-500">
-                              {kpi.description}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6 space-y-3">
-                  <h2 className="text-base font-semibold text-slate-900">
-                    AI-Generated Analysis
-                  </h2>
-                  {analysisError && (
-                    <p className="text-xs text-red-500">
-                      AI analysis error: {analysisError}
-                    </p>
-                  )}
-                  {analysis ? (
-                    <p className="text-sm leading-relaxed text-slate-700 whitespace-pre-line">
-                      {analysis}
-                    </p>
-                  ) : !analysisError ? (
-                    <p className="text-sm text-slate-400">
-                      No AI summary returned from backend.
-                    </p>
-                  ) : null}
-                </div>
+            {activeTab === "ai" && (
+              <div className="rounded-2xl bg-white shadow p-6">
+                <div className="text-lg font-semibold text-slate-900 mb-2">AI Analysis</div>
+                {result?.analysis?.error ? (
+                  <div className="text-sm text-red-700">{result.analysis.error}</div>
+                ) : (
+                  <pre className="text-sm whitespace-pre-wrap text-slate-800">
+                    {result?.analysis?.text ?? "No AI analysis returned."}
+                  </pre>
+                )}
               </div>
             )}
-          </section>
+          </div>
         )}
       </div>
     </main>
