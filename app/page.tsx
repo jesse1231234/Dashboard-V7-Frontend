@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import EchoComboChart from "./components/charts/EchoComboChart";
-import GradebookComboChart from "./components/charts/GradebookComboChart";
+<EchoComboChart moduleRows={echoModules as Row[]} />
+<GradebookComboChart moduleRows={gradeModuleMetrics as Row[]} />
 
 type AnyRow = Record<string, any>;
 
@@ -379,12 +379,12 @@ export default function Home() {
               <div className="grid gap-4">
                 <div className="rounded-2xl bg-white shadow p-6">
                   <div className="text-lg font-semibold text-slate-900 mb-2">Echo Chart</div>
-                  <EchoComboChart rows={echoModules} />
+                  <EchoComboChart moduleRows={echoModules as any} />
                 </div>
 
                 <div className="rounded-2xl bg-white shadow p-6">
                   <div className="text-lg font-semibold text-slate-900 mb-2">Gradebook Chart</div>
-                  <GradebookComboChart rows={gradeModuleMetrics} />
+                  <GradebookComboChart moduleRows={gradeModuleMetrics as any} />
                 </div>
               </div>
             )}
