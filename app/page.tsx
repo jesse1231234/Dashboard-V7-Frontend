@@ -27,7 +27,9 @@ type AnalyzeResponse = {
 const ECHO_SUMMARY_COLS = [
   "Media Title",
   "Video Duration",
-  "# of Unique Viewers",
+  "# of Unique Views",
+  "Total Views",
+  "Total Watch Time (Min)",
   "Average View %",
   "% of Students Viewing",
   "% of Video Viewed Overall",
@@ -143,14 +145,14 @@ function Table({
       {slice.length === 0 ? (
         <div className="text-sm text-slate-600">No data.</div>
       ) : (
-        <div className="overflow-x-auto overflow-y-auto rounded-xl border border-slate-200">
-          <table className="min-w-full text-sm table-fixed">
+        <div className="overflow-auto rounded-xl border border-slate-200">
+          <table className="min-w-full text-sm">
             <thead className="bg-slate-50">
               <tr>
                 {cols.map((c) => (
                   <th
                     key={c}
-                    className="text-left px-3 py-2 font-semibold text-slate-700 align-top max-w-[260px] break-words"
+                    className="text-left px-3 py-2 font-semibold text-slate-700 whitespace-nowrap"
                   >
                     {c}
                   </th>
@@ -161,7 +163,7 @@ function Table({
               {slice.map((r, idx) => (
                 <tr key={idx} className="border-t border-slate-100">
                   {cols.map((c) => (
-                    <td key={c} className="px-3 py-2 text-slate-800 align-top max-w-[260px] break-words">
+                    <td key={c} className="px-3 py-2 text-slate-800 whitespace-nowrap">
                       {formatCell(c, r[c], percentCols)}
                     </td>
                   ))}
@@ -355,9 +357,6 @@ export default function Home() {
 
             {activeTab === "tables" && (
               <div className="grid gap-4">
-                <pre className="text-xs bg-white p-3 rounded-xl overflow-auto border border-slate-200">
-  Echo Summary keys: {JSON.stringify(Object.keys(echoSummary?.[0] ?? {}), null, 2)}
-</pre>
                 <Table
                   title="Echo Summary"
                   rows={echoSummary}
@@ -382,11 +381,14 @@ export default function Home() {
                   percentCols={gradeSummaryPercentCols}
                   maxRows={50}
                 />
-                <pre className="text-xs bg-white p-3 rounded-xl overflow-auto border border-slate-200">
-                  Gradebook Module Metrics keys: {JSON.stringify(Object.keys(gradeModuleMetrics?.[0] ?? {}), null, 2)}
-                </pre>
 
-                
+                <Table
+                  title="Gradebook Module Metrics"
+                  rows={gradeModuleMetrics}
+                  columns={GRADEBOOK_MODULE_COLS}
+                  percentCols={GRADEBOOK_MODULE_PERCENT_COLS}
+                  maxRows={200}
+                />
               </div>
             )}
 
