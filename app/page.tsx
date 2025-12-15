@@ -172,14 +172,15 @@ export default function Page() {
     setLoading(true);
     try {
       const form = new FormData();
-      form.append("course_code", courseCode.trim());
-      form.append("canvas_file", canvasCsv);
-      form.append("echo_file", echoCsv);
+      form.append("course_id", courseCode.trim());
+      form.append("canvas_gradebook_csv", canvasCsv);
+      form.append("echo_analytics_csv", echoCsv);
 
       const res = await fetch(`${apiBase.replace(/\/+$/, "")}/analyze`, {
         method: "POST",
         body: form,
       });
+
 
       if (!res.ok) {
         const text = await res.text().catch(() => "");
