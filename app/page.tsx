@@ -5,7 +5,7 @@ import EchoComboChart from "./components/charts/EchoComboChart";
 import GradebookComboChart from "./components/charts/GradebookComboChart";
 
 type AnyRow = Record<string, any>;
-type Row = Record<string, any>;<string, any>;
+type Row = Record<string, any>;
 
 type AnalyzeResponse = {
   kpis?: Record<string, any>;
