@@ -357,6 +357,9 @@ export default function Home() {
 
             {activeTab === "tables" && (
               <div className="grid gap-4">
+                <pre className="text-xs bg-white p-3 rounded-xl overflow-auto border border-slate-200">
+  Echo Summary keys: {JSON.stringify(Object.keys(echoSummary?.[0] ?? {}), null, 2)}
+</pre>
                 <Table
                   title="Echo Summary"
                   rows={echoSummary}
@@ -381,6 +384,9 @@ export default function Home() {
                   percentCols={gradeSummaryPercentCols}
                   maxRows={50}
                 />
+                <pre className="text-xs bg-white p-3 rounded-xl overflow-auto border border-slate-200">
+                  Gradebook Module Metrics keys: {JSON.stringify(Object.keys(gradeModuleMetrics?.[0] ?? {}), null, 2)}
+                </pre>
 
                 <Table
                   title="Gradebook Module Metrics"
