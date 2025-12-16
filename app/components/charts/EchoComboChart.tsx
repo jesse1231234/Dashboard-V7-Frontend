@@ -8,195 +8,156 @@ import {
   Line,
   XAxis,
   YAxis,
-  CartesianGrid,
   Tooltip,
   Legend,
-  ReferenceLine,
+  CartesianGrid,
 } from "recharts";
 
 type Row = Record<string, any>;
 
+const CSU_GREEN = "#1E4D2B";
+const CSU_ORANGE = "#D9782D";
+
 function toNumber(v: any): number | null {
   if (v === null || v === undefined || v === "") return null;
   if (typeof v === "number" && Number.isFinite(v)) return v;
-
   const s = String(v).trim();
   if (!s) return null;
-
   const cleaned = s.replace(/%/g, "").replace(/,/g, "");
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
 }
 
-/** Streamlit parity: 0..1 -> 0..100 */
-function toPct0to100(v: any): number | null {
-  const n = toNumber(v);
-  if (n === null) return null;
-  return n * 100.0;
+function pickKey(keys: string[], candidates: string[]) {
+  for (const c of candidates) if (keys.includes(c)) return c;
+  return null;
 }
 
-function clampInt(n: number, lo: number, hi: number) {
-  return Math.max(lo, Math.min(hi, Math.round(n)));
-}
-
-/**
- * Streamlit parity:
- * - Bars: Viewed + Not Viewed = Total students per module (constant if studentsTotal provided)
- * - Lines (right axis): Avg View % and Overall View % (0..100)
- * - Optional dotted reference at studentsTotal
- */
 export default function EchoComboChart({
   moduleRows,
   studentsTotal,
-  title = "Echo Data",
+  title,
 }: {
   moduleRows: Row[];
-  studentsTotal?: number | null;
+  studentsTotal?: number;
   title?: string;
 }) {
-  const { data, leftMax } = useMemo(() => {
-    if (!moduleRows || moduleRows.length === 0) return { data: [], leftMax: 0 };
+  const { data, moduleKey, viewersKey, overallKey, avgKey } = useMemo(() => {
+    const rows = Array.isArray(moduleRows) ? moduleRows : [];
+    const keys = Object.keys(rows[0] ?? {});
 
-    const viewersCol = moduleRows.some((r) => r["# of Students Viewing"] !== undefined)
-      ? "# of Students Viewing"
-      : "# of Unique Viewers";
+    const moduleKey =
+      pickKey(keys, ["Module", "module", "Module Name", "module_name"]) ?? "Module";
 
-    const computed = moduleRows.map((r) => {
-      const Module = String(r["Module"] ?? "");
+    // In your module table you typically have some measure of viewers / students viewing
+    const viewersKey =
+      pickKey(keys, [
+        "# of Students Viewing",
+        "# of Students Viewing Video",
+        "# Students Viewing",
+        "Students Viewing",
+        "# of Unique Viewers",
+        "# of Unique Viewers (Module)",
+      ]) ?? null;
 
-      const rawViewers = toNumber(r[viewersCol]) ?? 0;
+    // Percent-like fields commonly present
+    const overallKey =
+      pickKey(keys, ["Overall View %", "% of Video Viewed Overall", "Overall % Viewed"]) ?? null;
 
-      let total: number;
-      let viewed: number;
-      let notViewed: number;
+    const avgKey =
+      pickKey(keys, ["Average View %", "Avg View %", "Average % Viewed"]) ?? null;
 
-      if (studentsTotal && studentsTotal > 0) {
-        total = studentsTotal;
-        viewed = clampInt(rawViewers, 0, studentsTotal);
-        notViewed = clampInt(total - viewed, 0, total);
-      } else {
-        const nStudents = toNumber(r["# of Students"]) ?? 0;
-        total = Math.round(Math.max(rawViewers, nStudents));
-        viewed = Math.round(rawViewers);
-        notViewed = Math.max(0, total - viewed);
-      }
+    // Normalize + compute a “not viewing” bar so we can stack
+    const data = rows.map((r) => {
+      const viewers = viewersKey ? toNumber(r[viewersKey]) : null;
 
-      const avgViewPct = toPct0to100(r["Average View %"]);
-      const overallViewPct = toPct0to100(r["Overall View %"]);
+      const total =
+        toNumber(r["# of Students"]) ??
+        toNumber(r["# Students"]) ??
+        (typeof studentsTotal === "number" ? studentsTotal : null);
+
+      const notViewing =
+        viewers !== null && total !== null ? Math.max(0, total - viewers) : null;
 
       return {
-        Module,
-        viewed,
-        notViewed,
-        total,
-        avgViewPct,
-        overallViewPct,
+        ...r,
+        __module: String(r[moduleKey] ?? ""),
+        __viewers: viewers,
+        __notViewing: notViewing,
+        __overallPct: overallKey ? toNumber(r[overallKey]) : null,
+        __avgPct: avgKey ? toNumber(r[avgKey]) : null,
       };
     });
 
-    const lm = computed.reduce((m, r) => Math.max(m, r.total || 0), 0);
-    return { data: computed, leftMax: lm };
+    return { data, moduleKey, viewersKey, overallKey, avgKey };
   }, [moduleRows, studentsTotal]);
 
-  // Headroom like your Plotly version (12% or at least 5)
-  const headroom = Math.max(5, Math.round(leftMax * 0.12));
-  const yLeftMax = leftMax > 0 ? leftMax + headroom : undefined;
+  const hasStack = data.some((d) => d.__viewers !== null && d.__notViewing !== null);
+  const hasOverall = data.some((d) => d.__overallPct !== null);
+  const hasAvg = data.some((d) => d.__avgPct !== null);
 
   return (
-    <div className="rounded-2xl bg-white shadow p-4">
-      <div className="mb-2">
-        <div className="text-sm font-semibold text-slate-900">{title}</div>
-        <div className="text-xs text-slate-500">Students (bars) + Percent (lines)</div>
-      </div>
+    <div>
+      {title ? <div className="text-sm font-semibold text-slate-900 mb-2">{title}</div> : null}
 
-      <div style={{ width: "100%", height: 420 }}>
-        <ResponsiveContainer>
-          <ComposedChart data={data} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
+      <div className="h-[360px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="Module" tick={{ fontSize: 12 }} />
+            <XAxis dataKey="__module" interval={0} angle={-20} textAnchor="end" height={70} />
+            <YAxis />
+            <Tooltip />
+            <Legend />
 
-            {/* Left axis for students */}
-            <YAxis
-              yAxisId="left"
-              domain={yLeftMax ? [0, yLeftMax] : ["auto", "auto"]}
-              tick={{ fontSize: 12 }}
-            />
+            {/* Stacked bars: viewers vs not-viewing */}
+            {hasStack && (
+              <>
+                <Bar
+                  dataKey="__viewers"
+                  name={viewersKey ?? "Students Viewing"}
+                  stackId="a"
+                  fill={CSU_GREEN}
+                />
+                <Bar
+                  dataKey="__notViewing"
+                  name="Students Not Viewing"
+                  stackId="a"
+                  fill={CSU_ORANGE}
+                />
+              </>
+            )}
 
-            {/* Right axis for percent */}
-            <YAxis
-              yAxisId="right"
-              orientation="right"
-              domain={[0, 100]}
-              tickFormatter={(v) => `${v}%`}
-              tick={{ fontSize: 12 }}
-            />
-
-            <Tooltip
-              formatter={(value: any, name: any) => {
-                if (value === null || value === undefined || Number.isNaN(value)) return ["", name];
-
-                // Percent series
-                if (name === "Avg View %" || name === "Avg Overall View %") {
-                  return [`${Number(value).toFixed(1)}%`, name];
-                }
-
-                // Student counts
-                return [Number(value).toLocaleString(), name];
-              }}
-              labelFormatter={(label) => `Module: ${label}`}
-            />
-
-            <Legend verticalAlign="top" align="left" />
-
-            {/* Optional dotted reference line at studentsTotal */}
-            {studentsTotal && studentsTotal > 0 ? (
-              <ReferenceLine
-                yAxisId="left"
-                y={studentsTotal}
-                strokeDasharray="4 4"
+            {/* Lines: percent metrics (if present). Keep them readable. */}
+            {hasOverall && (
+              <Line
+                type="monotone"
+                dataKey="__overallPct"
+                name={overallKey ?? "Overall View %"}
+                stroke={CSU_ORANGE}
+                dot={false}
+                yAxisId={0}
               />
-            ) : null}
+            )}
 
-            {/* Stacked bars: viewed + notViewed */}
-            <Bar
-              yAxisId="left"
-              dataKey="viewed"
-              name="# of Unique Viewers"
-              stackId="students"
-              isAnimationActive={false}
-            />
-            <Bar
-              yAxisId="left"
-              dataKey="notViewed"
-              name="Not Viewed"
-              stackId="students"
-              isAnimationActive={false}
-            />
-
-            {/* Lines on secondary axis */}
-            <Line
-              yAxisId="right"
-              type="monotone"
-              dataKey="avgViewPct"
-              name="Avg View %"
-              strokeWidth={2}
-              dot={{ r: 3 }}
-              connectNulls
-              isAnimationActive={false}
-            />
-            <Line
-              yAxisId="right"
-              type="monotone"
-              dataKey="overallViewPct"
-              name="Avg Overall View %"
-              strokeWidth={2}
-              dot={{ r: 3 }}
-              connectNulls
-              isAnimationActive={false}
-            />
+            {hasAvg && (
+              <Line
+                type="monotone"
+                dataKey="__avgPct"
+                name={avgKey ?? "Average View %"}
+                stroke={CSU_GREEN}
+                dot={false}
+                yAxisId={0}
+              />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+
+      {!hasStack && (
+        <div className="text-xs text-slate-500 mt-2">
+          Note: stacked bars require both “# of Students Viewing” and “# of Students” (or studentsTotal).
+        </div>
+      )}
     </div>
   );
 }
