@@ -33,6 +33,11 @@ function pickKey(keys: string[], candidates: string[]) {
   return null;
 }
 
+function truncateLabel(s: string, max = 18) {
+  if (!s) return "";
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
 export default function EchoComboChart({
   moduleRows,
   studentsTotal,
@@ -42,32 +47,28 @@ export default function EchoComboChart({
   studentsTotal?: number;
   title?: string;
 }) {
-  const { data, moduleKey, viewersKey, overallKey, avgKey } = useMemo(() => {
+  const { data, viewersKey, overallKey, avgKey } = useMemo(() => {
     const rows = Array.isArray(moduleRows) ? moduleRows : [];
     const keys = Object.keys(rows[0] ?? {});
 
     const moduleKey =
       pickKey(keys, ["Module", "module", "Module Name", "module_name"]) ?? "Module";
 
-    // In your module table you typically have some measure of viewers / students viewing
     const viewersKey =
       pickKey(keys, [
         "# of Students Viewing",
-        "# of Students Viewing Video",
         "# Students Viewing",
         "Students Viewing",
         "# of Unique Viewers",
         "# of Unique Viewers (Module)",
       ]) ?? null;
 
-    // Percent-like fields commonly present
     const overallKey =
       pickKey(keys, ["Overall View %", "% of Video Viewed Overall", "Overall % Viewed"]) ?? null;
 
     const avgKey =
       pickKey(keys, ["Average View %", "Avg View %", "Average % Viewed"]) ?? null;
 
-    // Normalize + compute a “not viewing” bar so we can stack
     const data = rows.map((r) => {
       const viewers = viewersKey ? toNumber(r[viewersKey]) : null;
 
@@ -79,17 +80,20 @@ export default function EchoComboChart({
       const notViewing =
         viewers !== null && total !== null ? Math.max(0, total - viewers) : null;
 
+      // Convert percents to 0–100 scale for the right axis
+      const overallPct = overallKey ? toNumber(r[overallKey]) : null;
+      const avgPct = avgKey ? toNumber(r[avgKey]) : null;
+
       return {
-        ...r,
         __module: String(r[moduleKey] ?? ""),
         __viewers: viewers,
         __notViewing: notViewing,
-        __overallPct: overallKey ? toNumber(r[overallKey]) : null,
-        __avgPct: avgKey ? toNumber(r[avgKey]) : null,
+        __overallPct: overallPct !== null ? overallPct * 100 : null,
+        __avgPct: avgPct !== null ? avgPct * 100 : null,
       };
     });
 
-    return { data, moduleKey, viewersKey, overallKey, avgKey };
+    return { data, viewersKey, overallKey, avgKey };
   }, [moduleRows, studentsTotal]);
 
   const hasStack = data.some((d) => d.__viewers !== null && d.__notViewing !== null);
@@ -97,28 +101,64 @@ export default function EchoComboChart({
   const hasAvg = data.some((d) => d.__avgPct !== null);
 
   return (
-    <div>
+    <div className="w-full">
       {title ? <div className="text-sm font-semibold text-slate-900 mb-2">{title}</div> : null}
 
-      <div className="h-[360px] w-full">
+      {/* Give the chart more height so rotated labels have room */}
+      <div className="h-[520px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
+          <ComposedChart
+            data={data}
+            margin={{ top: 16, right: 30, bottom: 120, left: 20 }}
+          >
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="__module" interval={0} angle={-20} textAnchor="end" height={70} />
-            <YAxis />
-            <Tooltip />
+
+            <XAxis
+              dataKey="__module"
+              interval={0}
+              angle={-35}
+              textAnchor="end"
+              height={110}
+              tickFormatter={(v) => truncateLabel(String(v), 26)}
+            />
+
+            {/* Left axis = counts */}
+            <YAxis
+              yAxisId="count"
+              allowDecimals={false}
+              width={40}
+            />
+
+            {/* Right axis = percentages */}
+            <YAxis
+              yAxisId="pct"
+              orientation="right"
+              domain={[0, 100]}
+              tickFormatter={(v) => `${v}%`}
+              width={55}
+            />
+
+            <Tooltip
+              formatter={(value: any, name: any) => {
+                if (name?.toLowerCase?.().includes("%")) return [`${value?.toFixed?.(1) ?? value}%`, name];
+                return [value, name];
+              }}
+              labelFormatter={(label) => String(label)}
+            />
             <Legend />
 
-            {/* Stacked bars: viewers vs not-viewing */}
+            {/* Stacked bars on count axis */}
             {hasStack && (
               <>
                 <Bar
+                  yAxisId="count"
                   dataKey="__viewers"
                   name={viewersKey ?? "Students Viewing"}
                   stackId="a"
                   fill={CSU_GREEN}
                 />
                 <Bar
+                  yAxisId="count"
                   dataKey="__notViewing"
                   name="Students Not Viewing"
                   stackId="a"
@@ -127,26 +167,28 @@ export default function EchoComboChart({
               </>
             )}
 
-            {/* Lines: percent metrics (if present). Keep them readable. */}
+            {/* Lines on pct axis */}
             {hasOverall && (
               <Line
+                yAxisId="pct"
                 type="monotone"
                 dataKey="__overallPct"
-                name={overallKey ?? "Overall View %"}
+                name="Overall View %"
                 stroke={CSU_ORANGE}
                 dot={false}
-                yAxisId={0}
+                strokeWidth={2}
               />
             )}
 
             {hasAvg && (
               <Line
+                yAxisId="pct"
                 type="monotone"
                 dataKey="__avgPct"
-                name={avgKey ?? "Average View %"}
+                name="Average View %"
                 stroke={CSU_GREEN}
                 dot={false}
-                yAxisId={0}
+                strokeWidth={2}
               />
             )}
           </ComposedChart>
