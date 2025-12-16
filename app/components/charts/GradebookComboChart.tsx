@@ -32,6 +32,11 @@ function pickKey(keys: string[], candidates: string[]) {
   return null;
 }
 
+function truncateLabel(s: string, max = 18) {
+  if (!s) return "";
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
 export default function GradebookComboChart({
   rows,
   title,
@@ -39,43 +44,56 @@ export default function GradebookComboChart({
   rows: Row[];
   title?: string;
 }) {
-  const { data, xKey, lineAKey, lineBKey } = useMemo(() => {
+  const { data, lineAKey, lineBKey } = useMemo(() => {
     const safe = Array.isArray(rows) ? rows : [];
     const keys = Object.keys(safe[0] ?? {});
 
     const xKey = pickKey(keys, ["Module", "module", "Module Name", "module_name"]) ?? "Module";
 
-    // These are the two series you described
-    const lineAKey =
-      pickKey(keys, ["Avg % Turned In", "Avg Turned In %", "% Turned In"]) ?? null;
-
+    const lineAKey = pickKey(keys, ["Avg % Turned In", "Avg Turned In %", "% Turned In"]) ?? null;
     const lineBKey =
       pickKey(keys, ["Avg Average Excluding Zeros", "Avg Excluding Zeros", "Average Excluding Zeros"]) ?? null;
 
     const data = safe.map((r) => ({
-      ...r,
       __x: String(r[xKey] ?? ""),
       __a: lineAKey ? toNumber(r[lineAKey]) : null,
       __b: lineBKey ? toNumber(r[lineBKey]) : null,
     }));
 
-    return { data, xKey, lineAKey, lineBKey };
+    return { data, lineAKey, lineBKey };
   }, [rows]);
 
   const hasA = data.some((d) => d.__a !== null);
   const hasB = data.some((d) => d.__b !== null);
 
   return (
-    <div>
+    <div className="w-full">
       {title ? <div className="text-sm font-semibold text-slate-900 mb-2">{title}</div> : null}
 
-      <div className="h-[320px] w-full">
+      <div className="h-[420px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
+          <LineChart data={data} margin={{ top: 16, right: 20, bottom: 90, left: 20 }}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="__x" interval={0} angle={-20} textAnchor="end" height={70} />
-            <YAxis />
-            <Tooltip />
+
+            <XAxis
+              dataKey="__x"
+              interval={0}
+              angle={-35}
+              textAnchor="end"
+              height={85}
+              tickFormatter={(v) => truncateLabel(String(v), 26)}
+            />
+
+            {/* Both are proportions (0-1), so use 0–1 domain and format as % */}
+            <YAxis domain={[0, 1]} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
+
+            <Tooltip
+              formatter={(value: any, name: any) => {
+                const n = typeof value === "number" ? value : toNumber(value);
+                if (n === null) return [value, name];
+                return [`${(n * 100).toFixed(1)}%`, name];
+              }}
+            />
             <Legend />
 
             {hasA && (
@@ -85,6 +103,7 @@ export default function GradebookComboChart({
                 name={lineAKey ?? "Avg % Turned In"}
                 stroke={CSU_GREEN}
                 dot={false}
+                strokeWidth={2}
               />
             )}
 
@@ -95,6 +114,7 @@ export default function GradebookComboChart({
                 name={lineBKey ?? "Avg Average Excluding Zeros"}
                 stroke={CSU_ORANGE}
                 dot={false}
+                strokeWidth={2}
               />
             )}
           </LineChart>
