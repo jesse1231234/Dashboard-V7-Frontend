@@ -183,16 +183,16 @@ function Table({
       setColWidths({});
       return;
     }
-    // measure against full rows (not just slice) to avoid jitter when paging maxRows
+
     const widths = buildColWidths(rows, cols, percentCols, {
       sample: Math.min(120, rows.length),
-      // Match the table font (we use text-xs in cells below)
       font: "12px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial",
       paddingPx: 20,
       minPx: 70,
       maxTextPx: 520,
       maxDefaultPx: 320,
     });
+
     setColWidths(widths);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, cols.join("|"), (percentCols ?? []).join("|"), maxRows]);
@@ -210,52 +210,55 @@ function Table({
       {slice.length === 0 ? (
         <div className="text-sm text-slate-600">No data.</div>
       ) : (
-        <div className="overflow-x-auto overflow-y-auto rounded-xl border border-slate-200">
-          <table className="w-max text-sm table-fixed">
-            <colgroup>
-              {cols.map((c) => (
-                <col key={c} style={colWidths[c] ? { width: `${colWidths[c]}px` } : undefined} />
-              ))}
-            </colgroup>
+        // Individual table scroll container (x + y), with a fixed max height and sticky header
+        <div className="rounded-xl border border-slate-200 overflow-hidden">
+          <div className="max-h-[520px] overflow-auto">
+            <table className="w-max text-sm table-fixed">
+              <colgroup>
+                {cols.map((c) => (
+                  <col key={c} style={colWidths[c] ? { width: `${colWidths[c]}px` } : undefined} />
+                ))}
+              </colgroup>
 
-            <thead className="bg-slate-50">
-              <tr>
-                {cols.map((c) => {
-                  const textHeavy = isTextHeavyCol(c);
-                  return (
-                    <th
-                      key={c}
-                      className={`text-left px-2 py-1 text-xs font-semibold text-slate-700 align-top ${
-                        textHeavy ? "break-words" : "whitespace-nowrap"
-                      }`}
-                    >
-                      {c}
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-
-            <tbody>
-              {slice.map((r, idx) => (
-                <tr key={idx} className="border-t border-slate-100">
+              <thead className="bg-slate-50 sticky top-0 z-10">
+                <tr>
                   {cols.map((c) => {
                     const textHeavy = isTextHeavyCol(c);
                     return (
-                      <td
+                      <th
                         key={c}
-                        className={`px-2 py-1 text-xs leading-snug text-slate-800 align-top ${
+                        className={`text-left px-2 py-1 text-xs font-semibold text-slate-700 align-top ${
                           textHeavy ? "break-words" : "whitespace-nowrap"
                         }`}
                       >
-                        {formatCell(c, r[c], percentCols)}
-                      </td>
+                        {c}
+                      </th>
                     );
                   })}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+
+              <tbody>
+                {slice.map((r, idx) => (
+                  <tr key={idx} className="border-t border-slate-100">
+                    {cols.map((c) => {
+                      const textHeavy = isTextHeavyCol(c);
+                      return (
+                        <td
+                          key={c}
+                          className={`px-2 py-1 text-xs leading-snug text-slate-800 align-top ${
+                            textHeavy ? "break-words" : "whitespace-nowrap"
+                          }`}
+                        >
+                          {formatCell(c, r[c], percentCols)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
@@ -334,7 +337,8 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-slate-100">
-      <div className="mx-auto max-w-6xl p-6">
+      {/* Screen-width container (centered), with normal padding */}
+      <div className="mx-auto max-w-screen-2xl px-6 py-6">
         <div className="text-2xl font-bold text-slate-900 mb-1">CLE Analytics Dashboard</div>
         <div className="text-sm text-slate-600 mb-6">Vercel (Frontend) + Render (Backend)</div>
 
@@ -347,7 +351,9 @@ export default function Home() {
         {step === 1 && (
           <div className="rounded-2xl bg-white shadow p-6">
             <div className="text-lg font-semibold text-slate-900 mb-2">Step 1: Enter Course</div>
-            <div className="text-sm text-slate-600 mb-3">Use the numeric Canvas Course ID (the number in the course URL).</div>
+            <div className="text-sm text-slate-600 mb-3">
+              Use the numeric Canvas Course ID (the number in the course URL).
+            </div>
 
             <label className="block text-sm text-slate-700 mb-1">Canvas Course ID</label>
             <input
@@ -423,7 +429,13 @@ export default function Home() {
                     activeTab === t ? "bg-slate-900 text-white" : "bg-white border border-slate-200 text-slate-800"
                   }`}
                 >
-                  {t === "tables" ? "Tables" : t === "charts" ? "Charts" : t === "exports" ? "Exports" : "AI Analysis"}
+                  {t === "tables"
+                    ? "Tables"
+                    : t === "charts"
+                    ? "Charts"
+                    : t === "exports"
+                    ? "Exports"
+                    : "AI Analysis"}
                 </button>
               ))}
             </div>
@@ -495,7 +507,9 @@ export default function Home() {
                 {result?.analysis?.error ? (
                   <div className="text-sm text-red-700">{result.analysis.error}</div>
                 ) : (
-                  <pre className="text-sm whitespace-pre-wrap text-slate-800">{result?.analysis?.text ?? "No AI analysis returned."}</pre>
+                  <pre className="text-sm whitespace-pre-wrap text-slate-800">
+                    {result?.analysis?.text ?? "No AI analysis returned."}
+                  </pre>
                 )}
               </div>
             )}
