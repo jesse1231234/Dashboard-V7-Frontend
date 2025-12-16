@@ -198,7 +198,7 @@ function Table({
   }, [rows, cols.join("|"), (percentCols ?? []).join("|"), maxRows]);
 
   return (
-    <div className="rounded-2xl bg-white shadow p-4">
+    <div className="rounded-2xl bg-white shadow p-4 min-w-0">
       <div className="mb-3">
         <div className="text-sm font-semibold text-slate-900">{title}</div>
         <div className="text-xs text-slate-500">
