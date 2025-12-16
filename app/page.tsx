@@ -211,7 +211,7 @@ function Table({
         <div className="text-sm text-slate-600">No data.</div>
       ) : (
         <div className="overflow-x-auto overflow-y-auto rounded-xl border border-slate-200">
-          <table className="min-w-full text-sm">
+          <table className="w-max text-sm table-fixed">
             <colgroup>
               {cols.map((c) => (
                 <col key={c} style={colWidths[c] ? { width: `${colWidths[c]}px` } : undefined} />
