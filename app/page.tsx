@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import EchoComboChart from "./components/charts/EchoComboChart";
 import GradebookComboChart from "./components/charts/GradebookComboChart";
 
@@ -35,20 +35,9 @@ const ECHO_SUMMARY_COLS = [
   "% of Video Viewed Overall",
 ];
 
-const ECHO_MODULE_COLS = [
-  "Module",
-  "Average View %",
-  "# of Students Viewing",
-  "Overall View %",
-  "# of Students",
-];
+const ECHO_MODULE_COLS = ["Module", "Average View %", "# of Students Viewing", "Overall View %", "# of Students"];
 
-const GRADEBOOK_MODULE_COLS = [
-  "Module",
-  "Avg % Turned In",
-  "Avg Average Excluding Zeros",
-  "n_assignments",
-];
+const GRADEBOOK_MODULE_COLS = ["Module", "Avg % Turned In", "Avg Average Excluding Zeros", "n_assignments"];
 
 const ECHO_SUMMARY_PERCENT_COLS = ["Average View %", "% of Students Viewing", "% of Video Viewed Overall"];
 const ECHO_MODULE_PERCENT_COLS = ["Average View %", "Overall View %"];
@@ -67,7 +56,6 @@ function toNumber(v: any): number | null {
 
 function formatNumberCell(n: number) {
   if (!Number.isFinite(n)) return "";
-  // Avoid over-formatting integers
   if (Math.abs(n) >= 1000) return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
@@ -75,7 +63,6 @@ function formatNumberCell(n: number) {
 function formatPercentCell(v: any) {
   const n = toNumber(v);
   if (n === null) return "";
-  // Streamlit logic: most of these are 0-1 proportions -> show as percent
   const pct = n * 100;
   return `${pct.toFixed(1)}%`;
 }
@@ -83,10 +70,9 @@ function formatPercentCell(v: any) {
 function formatCell(key: string, value: any, percentCols?: string[]) {
   if (value === null || value === undefined) return "";
 
-  // Explicit percent columns (preferred)
   if (percentCols?.includes(key)) return formatPercentCell(value);
 
-  // Auto percent: if header includes '%' and value is a proportion (0-1-ish)
+  // Auto percent if header includes % and value looks like proportion
   const n = toNumber(value);
   if (key.includes("%") && n !== null && n >= 0 && n <= 1.5) {
     return formatPercentCell(n);
@@ -98,11 +84,73 @@ function formatCell(key: string, value: any, percentCols?: string[]) {
   return String(value);
 }
 
+// ---------- Option B: measure + set widths via colgroup ----------
+function isTextHeavyCol(col: string) {
+  return /title|name|media|assignment|page|url|link|description/i.test(col);
+}
+
+function isNumericishCol(col: string) {
+  return /%|count|views|time|duration|avg|total|n_/i.test(col);
+}
+
+function buildColWidths(
+  rows: AnyRow[],
+  cols: string[],
+  percentCols?: string[],
+  opts?: {
+    sample?: number;
+    font?: string;
+    paddingPx?: number;
+    minPx?: number;
+    maxTextPx?: number;
+    maxDefaultPx?: number;
+  }
+) {
+  const sample = opts?.sample ?? 80;
+  const font = opts?.font ?? "12px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
+  const paddingPx = opts?.paddingPx ?? 22; // cell padding + some breathing room
+  const minPx = opts?.minPx ?? 70;
+  const maxTextPx = opts?.maxTextPx ?? 520; // cap long text columns
+  const maxDefaultPx = opts?.maxDefaultPx ?? 320;
+
+  // SSR safety
+  if (typeof document === "undefined") return {};
+
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return {};
+
+  ctx.font = font;
+
+  const widths: Record<string, number> = {};
+  const take = rows.slice(0, sample);
+
+  for (const c of cols) {
+    let max = ctx.measureText(String(c)).width;
+
+    for (const r of take) {
+      const txt = String(formatCell(c, r?.[c], percentCols) ?? "");
+      const w = ctx.measureText(txt).width;
+      if (w > max) max = w;
+    }
+
+    const padded = Math.ceil(max + paddingPx);
+
+    const cap = isTextHeavyCol(c) ? maxTextPx : maxDefaultPx;
+    const clamped = Math.max(minPx, Math.min(padded, cap));
+
+    // Numeric-ish columns can be tighter
+    widths[c] = isNumericishCol(c) && !isTextHeavyCol(c) ? Math.min(clamped, 180) : clamped;
+  }
+
+  return widths;
+}
+
 // ---------- Table component ----------
 function Table({
   title,
   rows,
-  columns, // if provided, display these columns in this order
+  columns,
   percentCols,
   maxRows = 50,
 }: {
@@ -113,24 +161,41 @@ function Table({
   maxRows?: number;
 }) {
   const cols = useMemo(() => {
-  if (!rows || rows.length === 0) return [];
-  const keys = Object.keys(rows[0] ?? {});
-  if (!columns || columns.length === 0) return keys;
+    if (!rows || rows.length === 0) return [];
+    const keys = Object.keys(rows[0] ?? {});
+    if (!columns || columns.length === 0) return keys;
 
-  const set = new Set(keys);
-  const picked = columns.filter((c) => set.has(c));
+    const set = new Set(keys);
+    const picked = columns.filter((c) => set.has(c));
 
-  // IMPORTANT:
-  // If the backend headers don't match our preferred list (common across versions),
-  // don't collapse to a 1-column table. Fall back to showing all columns.
-  // (We allow 1 because sometimes a table truly has only one column, but that’s rare here.)
-  if (picked.length <= 1 && keys.length > 1) return keys;
+    // Don’t collapse to 1 col if mismatch—fall back to all keys
+    if (picked.length <= 1 && keys.length > 1) return keys;
 
-  return picked;
-}, [rows, columns]);
-
+    return picked;
+  }, [rows, columns]);
 
   const slice = useMemo(() => rows.slice(0, maxRows), [rows, maxRows]);
+
+  const [colWidths, setColWidths] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    if (!slice.length || !cols.length) {
+      setColWidths({});
+      return;
+    }
+    // measure against full rows (not just slice) to avoid jitter when paging maxRows
+    const widths = buildColWidths(rows, cols, percentCols, {
+      sample: Math.min(120, rows.length),
+      // Match the table font (we use text-xs in cells below)
+      font: "12px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial",
+      paddingPx: 20,
+      minPx: 70,
+      maxTextPx: 520,
+      maxDefaultPx: 320,
+    });
+    setColWidths(widths);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, cols.join("|"), (percentCols ?? []).join("|"), maxRows]);
 
   return (
     <div className="rounded-2xl bg-white shadow p-4">
@@ -145,28 +210,48 @@ function Table({
       {slice.length === 0 ? (
         <div className="text-sm text-slate-600">No data.</div>
       ) : (
-        <div className="overflow-auto rounded-xl border border-slate-200">
+        <div className="overflow-x-auto overflow-y-auto rounded-xl border border-slate-200">
           <table className="min-w-full text-sm">
+            <colgroup>
+              {cols.map((c) => (
+                <col key={c} style={colWidths[c] ? { width: `${colWidths[c]}px` } : undefined} />
+              ))}
+            </colgroup>
+
             <thead className="bg-slate-50">
               <tr>
-                {cols.map((c) => (
-                  <th
-                    key={c}
-                    className="text-left px-3 py-2 font-semibold text-slate-700 whitespace-nowrap"
-                  >
-                    {c}
-                  </th>
-                ))}
+                {cols.map((c) => {
+                  const textHeavy = isTextHeavyCol(c);
+                  return (
+                    <th
+                      key={c}
+                      className={`text-left px-2 py-1 text-xs font-semibold text-slate-700 align-top ${
+                        textHeavy ? "break-words" : "whitespace-nowrap"
+                      }`}
+                    >
+                      {c}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
+
             <tbody>
               {slice.map((r, idx) => (
                 <tr key={idx} className="border-t border-slate-100">
-                  {cols.map((c) => (
-                    <td key={c} className="px-3 py-2 text-slate-800 whitespace-nowrap">
-                      {formatCell(c, r[c], percentCols)}
-                    </td>
-                  ))}
+                  {cols.map((c) => {
+                    const textHeavy = isTextHeavyCol(c);
+                    return (
+                      <td
+                        key={c}
+                        className={`px-2 py-1 text-xs leading-snug text-slate-800 align-top ${
+                          textHeavy ? "break-words" : "whitespace-nowrap"
+                        }`}
+                      >
+                        {formatCell(c, r[c], percentCols)}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
@@ -197,7 +282,6 @@ export default function Home() {
   const gradeSummary = result?.grades?.summary ?? [];
   const gradeModuleMetrics = result?.grades?.module_metrics ?? [];
 
-  // Gradebook Summary Rows: in Streamlit, everything in this table is a percent (except the row label).
   const gradeSummaryPercentCols = useMemo(() => {
     if (!gradeSummary?.[0]) return [];
     return Object.keys(gradeSummary[0]).filter((k) => k !== "Metric");
@@ -263,9 +347,7 @@ export default function Home() {
         {step === 1 && (
           <div className="rounded-2xl bg-white shadow p-6">
             <div className="text-lg font-semibold text-slate-900 mb-2">Step 1: Enter Course</div>
-            <div className="text-sm text-slate-600 mb-3">
-              Use the numeric Canvas Course ID (the number in the course URL).
-            </div>
+            <div className="text-sm text-slate-600 mb-3">Use the numeric Canvas Course ID (the number in the course URL).</div>
 
             <label className="block text-sm text-slate-700 mb-1">Canvas Course ID</label>
             <input
@@ -276,10 +358,7 @@ export default function Home() {
             />
 
             <div className="mt-4 flex gap-2">
-              <button
-                onClick={() => setStep(2)}
-                className="rounded-xl bg-slate-900 text-white px-4 py-2 text-sm"
-              >
+              <button onClick={() => setStep(2)} className="rounded-xl bg-slate-900 text-white px-4 py-2 text-sm">
                 Continue
               </button>
             </div>
@@ -299,9 +378,7 @@ export default function Home() {
                   onChange={(e) => setCanvasCsv(e.target.files?.[0] ?? null)}
                   className="w-full text-sm"
                 />
-                <div className="text-xs text-slate-500 mt-1">
-                  {canvasCsv ? canvasCsv.name : "No file selected"}
-                </div>
+                <div className="text-xs text-slate-500 mt-1">{canvasCsv ? canvasCsv.name : "No file selected"}</div>
               </div>
 
               <div>
@@ -312,9 +389,7 @@ export default function Home() {
                   onChange={(e) => setEchoCsv(e.target.files?.[0] ?? null)}
                   className="w-full text-sm"
                 />
-                <div className="text-xs text-slate-500 mt-1">
-                  {echoCsv ? echoCsv.name : "No file selected"}
-                </div>
+                <div className="text-xs text-slate-500 mt-1">{echoCsv ? echoCsv.name : "No file selected"}</div>
               </div>
             </div>
 
@@ -345,9 +420,7 @@ export default function Home() {
                   key={t}
                   onClick={() => setActiveTab(t)}
                   className={`rounded-xl px-4 py-2 text-sm ${
-                    activeTab === t
-                      ? "bg-slate-900 text-white"
-                      : "bg-white border border-slate-200 text-slate-800"
+                    activeTab === t ? "bg-slate-900 text-white" : "bg-white border border-slate-200 text-slate-800"
                   }`}
                 >
                   {t === "tables" ? "Tables" : t === "charts" ? "Charts" : t === "exports" ? "Exports" : "AI Analysis"}
@@ -376,8 +449,11 @@ export default function Home() {
                 <Table
                   title="Gradebook Summary Rows"
                   rows={gradeSummary}
-                  // Let it show whatever assignment columns are present, but keep Metric first if provided
-                  columns={gradeSummary?.[0]?.Metric ? ["Metric", ...Object.keys(gradeSummary[0]).filter((k) => k !== "Metric")] : undefined}
+                  columns={
+                    gradeSummary?.[0]?.Metric
+                      ? ["Metric", ...Object.keys(gradeSummary[0]).filter((k) => k !== "Metric")]
+                      : undefined
+                  }
                   percentCols={gradeSummaryPercentCols}
                   maxRows={50}
                 />
@@ -419,9 +495,7 @@ export default function Home() {
                 {result?.analysis?.error ? (
                   <div className="text-sm text-red-700">{result.analysis.error}</div>
                 ) : (
-                  <pre className="text-sm whitespace-pre-wrap text-slate-800">
-                    {result?.analysis?.text ?? "No AI analysis returned."}
-                  </pre>
+                  <pre className="text-sm whitespace-pre-wrap text-slate-800">{result?.analysis?.text ?? "No AI analysis returned."}</pre>
                 )}
               </div>
             )}
