@@ -5,107 +5,107 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
-  CartesianGrid,
   XAxis,
   YAxis,
   Tooltip,
   Legend,
+  CartesianGrid,
 } from "recharts";
 
 type Row = Record<string, any>;
 
+const CSU_GREEN = "#1E4D2B";
+const CSU_ORANGE = "#D9782D";
+
 function toNumber(v: any): number | null {
   if (v === null || v === undefined || v === "") return null;
   if (typeof v === "number" && Number.isFinite(v)) return v;
-
   const s = String(v).trim();
   if (!s) return null;
-
-  // Strip percent sign & commas if present
   const cleaned = s.replace(/%/g, "").replace(/,/g, "");
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
 }
 
-/**
- * Streamlit parity:
- * - Input columns are 0..1, convert to 0..100
- * - Two straight lines on one 0..100 y-axis
- */
-function toPct0to100(v: any): number | null {
-  const n = toNumber(v);
-  if (n === null) return null;
-  return n * 100.0;
+function pickKey(keys: string[], candidates: string[]) {
+  for (const c of candidates) if (keys.includes(c)) return c;
+  return null;
 }
 
 export default function GradebookComboChart({
   rows,
-  title = "Canvas Data",
+  title,
 }: {
   rows: Row[];
   title?: string;
 }) {
-  const data = useMemo(() => {
-    if (!rows || rows.length === 0) return [];
+  const { data, xKey, lineAKey, lineBKey } = useMemo(() => {
+    const safe = Array.isArray(rows) ? rows : [];
+    const keys = Object.keys(safe[0] ?? {});
 
-    return rows.map((r) => {
-      const module = String(r["Module"] ?? "");
-      const turnedIn = toPct0to100(r["Avg % Turned In"]);
-      const excl0 = toPct0to100(r["Avg Average Excluding Zeros"]);
+    const xKey = pickKey(keys, ["Module", "module", "Module Name", "module_name"]) ?? "Module";
 
-      return {
-        Module: module,
-        turnedIn,
-        excl0,
-      };
-    });
+    // These are the two series you described
+    const lineAKey =
+      pickKey(keys, ["Avg % Turned In", "Avg Turned In %", "% Turned In"]) ?? null;
+
+    const lineBKey =
+      pickKey(keys, ["Avg Average Excluding Zeros", "Avg Excluding Zeros", "Average Excluding Zeros"]) ?? null;
+
+    const data = safe.map((r) => ({
+      ...r,
+      __x: String(r[xKey] ?? ""),
+      __a: lineAKey ? toNumber(r[lineAKey]) : null,
+      __b: lineBKey ? toNumber(r[lineBKey]) : null,
+    }));
+
+    return { data, xKey, lineAKey, lineBKey };
   }, [rows]);
 
+  const hasA = data.some((d) => d.__a !== null);
+  const hasB = data.some((d) => d.__b !== null);
+
   return (
-    <div className="rounded-2xl bg-white shadow p-4">
-      <div className="mb-2">
-        <div className="text-sm font-semibold text-slate-900">{title}</div>
-        <div className="text-xs text-slate-500">Percent (0–100)</div>
-      </div>
+    <div>
+      {title ? <div className="text-sm font-semibold text-slate-900 mb-2">{title}</div> : null}
 
-      <div style={{ width: "100%", height: 360 }}>
-        <ResponsiveContainer>
-          <LineChart data={data} margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
+      <div className="h-[320px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="Module" tick={{ fontSize: 12 }} />
-            <YAxis
-              domain={[0, 100]}
-              tickFormatter={(v) => `${v}%`}
-              tick={{ fontSize: 12 }}
-            />
-            <Tooltip
-              formatter={(value: any, name: any) => {
-                if (value === null || value === undefined || Number.isNaN(value)) return ["", name];
-                return [`${Number(value).toFixed(1)}%`, name];
-              }}
-              labelFormatter={(label) => `Module: ${label}`}
-            />
-            <Legend verticalAlign="top" align="left" />
+            <XAxis dataKey="__x" interval={0} angle={-20} textAnchor="end" height={70} />
+            <YAxis />
+            <Tooltip />
+            <Legend />
 
-            <Line
-              type="monotone"
-              dataKey="turnedIn"
-              name="% Turned In"
-              strokeWidth={2}
-              dot={{ r: 3 }}
-              connectNulls
-            />
-            <Line
-              type="monotone"
-              dataKey="excl0"
-              name="Avg Excl Zeros"
-              strokeWidth={2}
-              dot={{ r: 3 }}
-              connectNulls
-            />
+            {hasA && (
+              <Line
+                type="monotone"
+                dataKey="__a"
+                name={lineAKey ?? "Avg % Turned In"}
+                stroke={CSU_GREEN}
+                dot={false}
+              />
+            )}
+
+            {hasB && (
+              <Line
+                type="monotone"
+                dataKey="__b"
+                name={lineBKey ?? "Avg Average Excluding Zeros"}
+                stroke={CSU_ORANGE}
+                dot={false}
+              />
+            )}
           </LineChart>
         </ResponsiveContainer>
       </div>
+
+      {(!hasA || !hasB) && (
+        <div className="text-xs text-slate-500 mt-2">
+          Note: one or both gradebook series were not found in the module metrics rows.
+        </div>
+      )}
     </div>
   );
 }
