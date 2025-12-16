@@ -212,8 +212,11 @@ function Table({
       ) : (
         // Individual table scroll container (x + y), with a fixed max height and sticky header
         <div className="rounded-xl border border-slate-200 overflow-hidden">
-          <div className="max-h-[520px] overflow-auto">
+          {/* This box is constrained to the card width (screen-width container) */}
+          <div className="w-full max-h-[520px] overflow-x-auto overflow-y-auto">
+            {/* Table can be wider than the box; scroll happens on the box */}
             <table className="w-max text-sm table-fixed">
+
               <colgroup>
                 {cols.map((c) => (
                   <col key={c} style={colWidths[c] ? { width: `${colWidths[c]}px` } : undefined} />
