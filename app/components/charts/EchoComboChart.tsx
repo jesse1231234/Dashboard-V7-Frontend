@@ -111,7 +111,7 @@ export default function EchoComboChart({
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={data}
-            margin={{ top: 16, right: 30, bottom: 120, left: 20 }}
+            margin={{ top: 44, right: 30, bottom: 120, left: 20 }}
           >
             <CartesianGrid strokeDasharray="3 3" />
 
@@ -147,7 +147,12 @@ export default function EchoComboChart({
               }}
               labelFormatter={(label) => String(label)}
             />
-            <Legend />
+            <Legend
+              verticalAlign="top"
+              align="center"
+              height={32}
+              wrapperStyle={{ paddingBottom: 8 }}
+            />
 
             {/* Stacked bars on count axis */}
             {hasStack && (
