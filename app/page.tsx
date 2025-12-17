@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import EchoComboChart from "./components/charts/EchoComboChart";
-import GradebookComboChart from "./components/charts/GradebookComboChart";
+import { EchoComboChart } from "./components/charts/EchoComboChart";
+import { GradebookComboChart } from "./components/charts/GradebookComboChart";
 
 type AnyRow = Record<string, any>;
 type Row = Record<string, any>;
