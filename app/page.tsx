@@ -492,7 +492,7 @@ export default function Home() {
 
                 <div className="rounded-2xl bg-white shadow p-6">
                   <div className="text-lg font-semibold text-slate-900 mb-2">Gradebook Chart</div>
-                  <GradebookComboChart data={gradebookModules as any[]} />
+                  <GradebookComboChart data={gradeModuleMetrics as any[]} />
                 </div>
               </div>
             )}
