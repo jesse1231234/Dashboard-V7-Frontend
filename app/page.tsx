@@ -487,12 +487,12 @@ export default function Home() {
               <div className="grid gap-4">
                 <div className="rounded-2xl bg-white shadow p-6">
                   <div className="text-lg font-semibold text-slate-900 mb-2">Echo Chart</div>
-                  <EchoComboChart moduleRows={echoModules as any} />
+                  <EchoComboChart data={echoModules as any[]} />
                 </div>
 
                 <div className="rounded-2xl bg-white shadow p-6">
                   <div className="text-lg font-semibold text-slate-900 mb-2">Gradebook Chart</div>
-                  <GradebookComboChart rows={gradeModuleMetrics as any} />
+                  <GradebookComboChart data={gradebookModules as any[]} />
                 </div>
               </div>
             )}
