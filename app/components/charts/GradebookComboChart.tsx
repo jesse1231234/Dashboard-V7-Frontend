@@ -72,7 +72,7 @@ export default function GradebookComboChart({
 
       <div className="h-[420px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 16, right: 20, bottom: 90, left: 20 }}>
+          <LineChart data={data} margin={{ top: 44, right: 20, bottom: 90, left: 20 }}>
             <CartesianGrid strokeDasharray="3 3" />
 
             <XAxis
@@ -94,7 +94,12 @@ export default function GradebookComboChart({
                 return [`${(n * 100).toFixed(1)}%`, name];
               }}
             />
-            <Legend />
+            <Legend
+              verticalAlign="top"
+              align="center"
+              height={32}
+              wrapperStyle={{ paddingBottom: 8 }}
+            />
 
             {hasA && (
               <Line
