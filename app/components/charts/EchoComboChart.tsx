@@ -17,6 +17,8 @@ type Row = Record<string, any>;
 
 const CSU_GREEN = "#1E4D2B";
 const CSU_ORANGE = "#D9782D";
+const CSU_BLUE = "#008FB3";
+const CSU_PURPLE = "#7E5475";
 
 function toNumber(v: any): number | null {
   if (v === null || v === undefined || v === "") return null;
@@ -174,7 +176,7 @@ export default function EchoComboChart({
                 type="monotone"
                 dataKey="__overallPct"
                 name="Overall View %"
-                stroke={CSU_ORANGE}
+                stroke={CSU_BLUE}
                 dot={false}
                 strokeWidth={2}
               />
@@ -186,7 +188,7 @@ export default function EchoComboChart({
                 type="monotone"
                 dataKey="__avgPct"
                 name="Average View %"
-                stroke={CSU_GREEN}
+                stroke={CSU_PURPLE}
                 dot={false}
                 strokeWidth={2}
               />
