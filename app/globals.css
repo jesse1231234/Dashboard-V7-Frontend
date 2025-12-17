@@ -5,3 +5,24 @@
 body {
   @apply bg-slate-100 text-slate-900;
 }
+:root {
+  --bg: #0b1220;
+  --surface: #0f172a;
+  --surface-soft: #111827;
+
+  --border-subtle: rgba(255, 255, 255, 0.06);
+
+  --text-primary: #e5e7eb;
+  --text-muted: #9ca3af;
+
+  --accent: #1e4d2b;     /* CSU green */
+  --accent-2: #d9782d;   /* CSU gold */
+
+  --radius-lg: 16px;
+  --radius-md: 12px;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text-primary);
+}
