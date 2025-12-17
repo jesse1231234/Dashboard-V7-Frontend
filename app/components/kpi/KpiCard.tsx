@@ -1,4 +1,4 @@
-import { Card } from "@/components/ui/Card";
+import { Card } from "../ui/Card";
 
 export function KpiCard({
   label,
